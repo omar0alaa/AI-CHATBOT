@@ -103,6 +103,70 @@ A web-based AI chatbot built with Python Flask and Ollama for local LLM inferenc
 
 This application is designed to work with a local Ollama server. For production use, consider running both the Flask application and Ollama on the same server.
 
+### Production Deployment
+
+1. **Start Ollama as a background service**
+   - Make sure Ollama is running and your model is loaded:
+     ```
+     ollama serve &
+     ollama run gemma2:2b &
+     ```
+   - You may want to use a process manager (like `systemd` or `pm2`) to keep Ollama running.
+
+2. **Run Flask with Gunicorn (recommended for production)**
+   - Install Gunicorn:
+     ```
+     pip install gunicorn
+     ```
+   - Start the Flask app with Gunicorn (use 2-4 workers for small servers):
+     ```
+     gunicorn -w 4 -b 0.0.0.0:5000 app:app
+     ```
+
+### Running with Waitress (Windows-friendly)
+
+1. Install Waitress:
+   ```
+   pip install waitress
+   ```
+2. Run the Flask app with Waitress:
+   ```
+   waitress-serve --port=5000 app:app
+   ```
+   - You can change the port as needed.
+   - Waitress is a good choice for production on Windows servers.
+
+3. **(Optional) Use a reverse proxy (Nginx/Apache) for SSL and static files**
+   - Set up Nginx to proxy requests to Gunicorn and serve static files efficiently.
+   - Example Nginx config:
+     ```
+     server {
+         listen 80;
+         server_name yourdomain.com;
+
+         location /static/ {
+             alias /path/to/AIChatBot-Python/static/;
+         }
+
+         location / {
+             proxy_pass http://127.0.0.1:5000;
+             proxy_set_header Host $host;
+             proxy_set_header X-Real-IP $remote_addr;
+             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+             proxy_set_header X-Forwarded-Proto $scheme;
+         }
+     }
+     ```
+
+4. **Secure your deployment**
+   - Use HTTPS (Let's Encrypt or similar)
+   - Set a strong `FLASK_SECRET_KEY` in your `.env` file
+   - Restrict file upload types and size as needed
+
+5. **Monitor and maintain**
+   - Use process managers (systemd, supervisor, pm2) to keep Gunicorn and Ollama running
+   - Monitor logs and resource usage
+
 ## License
 
 See the LICENSE file for details.
