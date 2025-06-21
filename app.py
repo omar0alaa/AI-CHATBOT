@@ -8,6 +8,11 @@ from sumy.parsers.plaintext import PlaintextParser
 from sumy.nlp.tokenizers import Tokenizer
 from sumy.summarizers.lsa import LsaSummarizer
 from flask_session import Session
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, StorageContext, load_index_from_storage
+from llama_index.llms.ollama import Ollama
+from llama_index.readers.file import PDFReader, DocxReader, ImageReader
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+import tempfile
 
 # Load environment variables
 load_dotenv()
@@ -50,13 +55,12 @@ def widget():
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
-    #Process user messages and get AI responses from Ollama, sending system prompt only at start of session.
+    # Process user messages and get AI responses from LlamaIndex (document Q&A) using Ollama
     data = request.json
     user_message = data.get('message', '')
-    
     if not user_message:
         return jsonify({'error': 'No message provided'}), 400
-    
+
     # Get or initialize chat history in session
     chat_history = session.get('chat_history', [])
     if not chat_history:
@@ -67,67 +71,17 @@ def chat():
         })
     # Add user message
     chat_history.append({"role": "user", "content": user_message})
-    
-    # Summarize all messages before the last MAX_HISTORY into a single summary message, but skip system messages
-    MAX_HISTORY = 5
-    summarizer = LsaSummarizer()
-    # Only keep the very first system message at the start
-    first_system = next((msg for msg in chat_history if msg['role'] == 'system'), None)
-    summarized_history = [first_system] if first_system else []
-    # Collect messages to summarize (exclude all system messages)
-    to_summarize = [msg for msg in chat_history[1:-(MAX_HISTORY)] if msg['role'] != 'system'] if len(chat_history) > (MAX_HISTORY + 1) else []
-    if to_summarize:
-        all_text = '\n'.join([msg['content'] for msg in to_summarize if msg['content'].strip() and not msg['content'].strip().lower().startswith('summary:')])
-        if all_text.strip():
-            parser = PlaintextParser.from_string(all_text, Tokenizer("english"))
-            summary_sentences = summarizer(parser.document, 5)
-            summary = ' '.join(str(sentence) for sentence in summary_sentences)
-            if not summary.strip() or summary.strip().lower().startswith('summary:'):
-                summary = all_text
-            summarized_history.append({"role": "system", "content": f"Summary of earlier conversation: {summary}"})
-            
-    # Summarize the next (older) messages one by one, except the last MAX_HISTORY
-    for msg in chat_history[-MAX_HISTORY:-1]:
-        content = msg['content']
-        if msg['role'] == 'system':
-            continue  # skip any system messages except the first
-        elif content.strip() and not content.strip().lower().startswith('summary:'):
-            parser = PlaintextParser.from_string(content, Tokenizer("english"))
-            summary_sentences = summarizer(parser.document, 3)
-            summary = ' '.join(str(sentence) for sentence in summary_sentences)
-            if not summary.strip() or summary.strip().lower().startswith('summary:'):
-                summarized_history.append({"role": msg['role'], "content": content})
-            else:
-                summarized_history.append({"role": msg['role'], "content": f"Summary: {summary}"})
-        else:
-            summarized_history.append({"role": msg['role'], "content": content})
-    
-    # Add the very last message in full (not summarized)
-    if len(chat_history) > 1 and chat_history[-1]['role'] != 'system':
-        summarized_history.append(chat_history[-1])
-    prompt_history = summarized_history
+
+    # Use LlamaIndex to answer the user's question based on indexed documents
+    index = get_llama_index()
+    if not index:
+        return jsonify({'error': 'No documents indexed yet'}), 400
+    llm = Ollama(model='gemma2:2b')
+    query_engine = index.as_query_engine(llm=llm, embed_model=embed_model)
     try:
-        payload = {
-            "model": "gemma2:2b",
-            "messages": prompt_history
-        }
-        response = requests.post(OLLAMA_API_URL, json=payload, stream=True)
-        response.raise_for_status()
-        response_text = ''
-        for line in response.iter_lines(decode_unicode=True):
-            if line:
-                try:
-                    response_data = json.loads(line)
-                    if 'message' in response_data and 'content' in response_data['message']:
-                        response_text += response_data['message']['content']
-                except Exception:
-                    continue
-        if not response_text:
-            # fallback for non-streaming response
-            response_data = response.json()
-            response_text = response_data['message']['content']
+        answer = query_engine.query(user_message)
         # Add assistant reply to chat history
-        chat_history.append({"role": "assistant", "content": response_text})
+        chat_history.append({"role": "assistant", "content": str(answer)})
         session['chat_history'] = chat_history
         
         #----------------------------------------REMOVE IN PRODUCTION --------------------------------------------------------------
@@ -136,14 +90,94 @@ def chat():
             json.dump({
                 'timestamp': __import__('datetime').datetime.now().isoformat(),
                 'chat_history': chat_history,
-                'payload': payload,
-                'user_message': user_message,
-                'summarized_history': summarized_history if 'summarized_history' in locals() else None
+                'user_message': user_message
             }, f, ensure_ascii=False, indent=2)
-        #---------------------------------------------------------------------------------------------------------------------------
-        return jsonify({'message': response_text})
+        return jsonify({'message': str(answer)})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+# --- LlamaIndex Setup ---
+# Preload admin document (e.g. YouLearnt_logic.docx) at startup
+ADMIN_DOC_PATH = 'YouLearnt_logic.docx'
+llama_index = None
+llama_docs = []
+llama_index_storage_dir = './llamaindex_storage'
+
+# Use a local HuggingFace embedding model
+embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
+
+if os.path.exists(ADMIN_DOC_PATH):
+    # Load admin doc at startup
+    llama_docs = DocxReader().load_data(ADMIN_DOC_PATH)  # FIX: do not wrap in list
+    # Build index and persist
+    index = VectorStoreIndex.from_documents(llama_docs, show_progress=True, embed_model=embed_model)
+    index.storage_context.persist(persist_dir=llama_index_storage_dir)
+    llama_index = index
+else:
+    llama_index = None
+
+# Helper: load or reload index from storage
+def get_llama_index():
+    global llama_index
+    if llama_index is not None:
+        return llama_index
+    if os.path.exists(llama_index_storage_dir):
+        storage_context = StorageContext.from_defaults(persist_dir=llama_index_storage_dir)
+        llama_index = load_index_from_storage(storage_context, embed_model=embed_model)
+        return llama_index
+    return None
+
+# --- File Upload Endpoint ---
+from werkzeug.utils import secure_filename
+ALLOWED_EXTENSIONS = {'pdf', 'docx', 'txt', 'png', 'jpg', 'jpeg'}
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+@app.route('/api/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        temp_path = os.path.join(tempfile.gettempdir(), filename)
+        file.save(temp_path)
+        # Load and index the file
+        ext = filename.rsplit('.', 1)[1].lower()
+        if ext == 'pdf':
+            doc = PDFReader().load_data(temp_path)
+        elif ext == 'docx':
+            doc = DocxReader().load_data(temp_path)
+        elif ext in {'png', 'jpg', 'jpeg'}:
+            doc = ImageReader().load_data(temp_path)
+        else:
+            with open(temp_path, 'r', encoding='utf-8') as f:
+                doc = [f.read()]
+        # Add to index (in-memory for now, or you can persist)
+        global llama_index
+        if llama_index is not None:
+            llama_index.insert_documents(doc)
+        else:
+            llama_index = VectorStoreIndex.from_documents(doc, embed_model=embed_model)
+        return jsonify({'success': True, 'filename': filename})
+    return jsonify({'error': 'File type not allowed'}), 400
+
+# --- LlamaIndex Q&A Endpoint ---
+@app.route('/api/llama_query', methods=['POST'])
+def llama_query():
+    data = request.json
+    question = data.get('question', '')
+    if not question:
+        return jsonify({'error': 'No question provided'}), 400
+    index = get_llama_index()
+    if not index:
+        return jsonify({'error': 'No documents indexed yet'}), 400
+    llm = Ollama(model='gemma2:2b')
+    query_engine = index.as_query_engine(llm=llm, embed_model=embed_model)
+    answer = query_engine.query(question)
+    return jsonify({'answer': str(answer)})
 
 if __name__ == '__main__':
     app.run(debug=True)
