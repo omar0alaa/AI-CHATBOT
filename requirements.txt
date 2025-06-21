@@ -1,7 +1,15 @@
 flask
+Flask-Session
 requests
 python-dotenv
 sumy
 nltk
 numpy
-Flask-Session
+llama-index
+llama-index-llms-ollama
+llama-index-embeddings-huggingface
+python-docx
+pillow
+docx2txt
+langdetect
+werkzeug

@@ -1,4 +1,4 @@
-# AI Chatbot with Python and Ollama
+# AI Chatbot with Python, LlamaIndex, and Ollama
 
 A web-based AI chatbot built with Python Flask and Ollama for local LLM inference.
 
@@ -6,11 +6,18 @@ A web-based AI chatbot built with Python Flask and Ollama for local LLM inferenc
 
 ## Features
 
-- Web interface for chatting with the AI
+- Web interface for chatting with the AI (bilingual: English/Arabic, with language switcher)
 - Backend API built with Flask
-- Integration with Ollama for local LLM inference
-- Responsive UI with modern design
-- No API keys or cloud services required
+- Integration with Ollama for local LLM inference (no cloud, no API keys)
+- Uses LlamaIndex for document Q&A over admin and user-uploaded files
+- Local HuggingFace embeddings (BAAI/bge-small-en-v1.5)
+- File upload: users can upload PDF, DOCX, TXT, and image files for Q&A
+- Admin document is always loaded as the base knowledge
+- Uploaded files are deleted after each answer (admin doc is never deleted)
+- Professional support agent persona, always answers in the website's selected language
+- All answers formatted with clear paragraphs, bullet points, and bold for key terms
+- Responsive, modern UI with dark mode and RTL support for Arabic
+- Session-based chat history (per user, persists until session is cleared)
 
 ## Prerequisites
 
@@ -23,9 +30,9 @@ A web-based AI chatbot built with Python Flask and Ollama for local LLM inferenc
 1. Download and install Ollama from [ollama.com](https://ollama.com/)
 2. Open a terminal and run:
    ```
-   ollama run llama3
+   ollama run gemma2:2b
    ```
-   Or replace `llama3` with your preferred model (e.g., `gemma2:2b`).
+   Or replace `gemma2:2b` with your preferred model.
 3. The server should be running on http://localhost:11434 by default
 
 ## Chatbot Setup
@@ -63,42 +70,34 @@ A web-based AI chatbot built with Python Flask and Ollama for local LLM inferenc
 
 6. Open your browser and navigate to `http://127.0.0.1:5000`
 
+## Usage Notes
+
+- The admin document is always loaded and forms the base knowledge for the AI.
+- When a user uploads files, the index is rebuilt to include both the admin doc and all uploaded files.
+- After each answer, all user-uploaded files are deleted automatically (admin doc is never deleted).
+- The AI always answers in the website's selected language (English or Arabic), regardless of the question's language.
+- All answers are formatted for clarity and professionalism.
+
 ## Project Structure
 
-- `app.py`: Main Flask application
-- `templates/index.html`: Chat interface
+- `app.py`: Main Flask application (backend, LlamaIndex/Ollama integration, endpoints)
+- `templates/index.html`: Main chat interface (bilingual UI, file upload, language switcher)
+- `static/js/chat.js`: Chat logic, markdown rendering
+- `static/js/upload.js`: File upload logic
+- `uploaded_docs/`: Directory for user-uploaded files (auto-cleaned after each answer)
+- `llamaindex_storage/`: Persistent storage for LlamaIndex
 - `requirements.txt`: Project dependencies
 
-## Customization
-
-You can customize the AI behavior by modifying the system prompt in `app.py`:
-
-```python
-"messages": [
-    {"role": "system", "content": "[Your description of the AI personality.]"},
-    {"role": "user", "content": user_message}
-]
-```
-
-You can also adjust the generation parameters:
-
-```python
-payload = {
-    "messages": [...],
-    "temperature": 0.7,  # Controls randomness (lower is more deterministic)
-    "max_tokens": 500    # Maximum response length
-}
-```
 ## TO DO 
 1. Implement Chat History backend database
 2. Change backend to send AI Description only at the start of conversation ✅
 3. Add Custom API for chatting and test with Postman
 4. Enhance the reply speed 
 5. Enhance the reply formatting ✅
-6. Use better persona description
+6. Use better persona description ✅
 7. Better Token usage efficiency ✅
-8. implement better session handling (for each user)
-9. implement File handling
+8. implement better session handling (for each user) ✅
+9. implement File handling ✅
 
 ## Deployment
 
