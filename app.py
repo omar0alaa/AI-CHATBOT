@@ -13,6 +13,7 @@ from llama_index.llms.ollama import Ollama
 from llama_index.readers.file import PDFReader, DocxReader, ImageReader
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 import tempfile
+from langdetect import detect
 
 # Load environment variables
 load_dotenv()
@@ -61,6 +62,15 @@ def chat():
     if not user_message:
         return jsonify({'error': 'No message provided'}), 400
 
+    # Detect language of the user message
+    try:
+        user_lang = detect(user_message)
+    except Exception:
+        user_lang = 'en'
+    lang_map = {'en': 'English', 'ar': 'Arabic'}
+    lang_name = lang_map.get(user_lang, user_lang)
+    lang_instruction = f"Please answer in {lang_name} regardless of the document language."
+
     # Get or initialize chat history in session
     chat_history = session.get('chat_history', [])
     if not chat_history:
@@ -69,6 +79,8 @@ def chat():
             "role": "system",
             "content": "Your name is Proto AI. You are a helpful, friendly AI assistant, but users should see you as 'Proto AI'. You have a slightly playful and enthusiastic personality. You're knowledgeable, curious, and always willing to help."
         })
+    # Add language instruction as a system message for this turn
+    chat_history.append({"role": "system", "content": lang_instruction})
     # Add user message
     chat_history.append({"role": "user", "content": user_message})
 
@@ -83,14 +95,13 @@ def chat():
         # Add assistant reply to chat history
         chat_history.append({"role": "assistant", "content": str(answer)})
         session['chat_history'] = chat_history
-        
-        #----------------------------------------REMOVE IN PRODUCTION --------------------------------------------------------------
-        # Output the prompt to a file for inspection, with more details 
+        # Output the prompt to a file for inspection, with more details
         with open('last_prompt.json', 'w', encoding='utf-8') as f:
             json.dump({
                 'timestamp': __import__('datetime').datetime.now().isoformat(),
                 'chat_history': chat_history,
-                'user_message': user_message
+                'user_message': user_message,
+                'detected_language': lang_name
             }, f, ensure_ascii=False, indent=2)
         return jsonify({'message': str(answer)})
     except Exception as e:
