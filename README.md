@@ -94,9 +94,11 @@ payload = {
 2. Change backend to send AI Description only at the start of conversation ✅
 3. Add Custom API for chatting and test with Postman
 4. Enhance the reply speed 
-5. Enhance the reply formatting 
+5. Enhance the reply formatting ✅
 6. Use better persona description
 7. Better Token usage efficiency ✅
+8. implement better session handling (for each user)
+9. implement File handling
 
 ## Deployment
 

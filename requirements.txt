@@ -4,3 +4,4 @@ python-dotenv
 sumy
 nltk
 numpy
+Flask-Session

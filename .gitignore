@@ -9,6 +9,7 @@ __pycache__/
 .Python
 env/
 build/
+flask_session/
 develop-eggs/
 dist/
 downloads/
@@ -22,6 +23,9 @@ var/
 *.egg-info/
 .installed.cfg
 *.egg
+
+# Testing
+last_prompt.json
 
 # Virtual Environment
 venv/
