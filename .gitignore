@@ -27,6 +27,8 @@ var/
 # Testing
 last_prompt.json
 
+#user related
+uploaded_docs/
 # Virtual Environment
 venv/
 ENV/

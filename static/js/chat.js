@@ -128,12 +128,13 @@ document.addEventListener('DOMContentLoaded', () => {
      * Fetch response from the chatbot API
      */
     function fetchBotResponse(message) {
+        const lang = localStorage.getItem('protoai_lang') || 'en';
         fetch('/api/chat', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ message: message })
+            body: JSON.stringify({ message: message, lang: lang })
         })
         .then(response => response.json())
         .then(data => {

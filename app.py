@@ -59,17 +59,43 @@ def chat():
     # Process user messages and get AI responses from LlamaIndex (document Q&A) using Ollama
     data = request.json
     user_message = data.get('message', '')
+    ui_lang = data.get('lang')  # Get website language from frontend
     if not user_message:
         return jsonify({'error': 'No message provided'}), 400
 
-    # Detect language of the user message
-    try:
-        user_lang = detect(user_message)
-    except Exception:
+    # Determine answer language: use UI language if provided, else detect from message
+    if ui_lang == 'ar':
+        user_lang = 'ar'
+    elif ui_lang == 'en':
         user_lang = 'en'
+    else:
+        # Fallback to language detection
+        try:
+            user_lang = detect(user_message)
+        except Exception:
+            user_lang = 'en'
     lang_map = {'en': 'English', 'ar': 'Arabic'}
     lang_name = lang_map.get(user_lang, user_lang)
-    lang_instruction = f"Please answer in {lang_name} regardless of the document language."
+    # Use explicit formatting instructions for each language
+    if user_lang == 'ar':
+        lang_instruction = (
+            "أنت وكيل دعم محترف. أجب فقط على الأسئلة بناءً على المستندات المقدمة. استخدم لغة رسمية وواضحة. "
+            "نسق إجاباتك بفقرات واضحة، واستخدم النقاط للقوائم، واجعل الكلمات الرئيسية بارزة (غامقة). لا تستخدم كود أو علامات ترقيم غير ضرورية. "
+            "إذا كان سؤال المستخدم بلغة مختلفة عن لغة البيانات، ترجم المعلومات ذات الصلة من المستندات وأجب بلغة المستخدم. "
+            "أجب دائماً باللغة العربية فقط، مهما كانت لغة السؤال. لا تستخدم الإنجليزية في الإجابة أبداً. إذا أجبت بغير العربية فهذا خطأ. IMPORTANT: Always answer in Arabic only, never in English, no matter what language the question is. "
+            "إذا لم تكن تعرف الإجابة من المستندات، قل: 'عذراً، لا أملك هذه المعلومة.' "
+            "مهم: لا تذكر أبداً عبارات مثل 'النص المقدم' أو 'السياق المقدم' أو ما شابه في إجابتك. أجب وكأنك تعرف المعلومة مباشرة كوكيل دعم."
+        )
+        # Prepend Arabic instruction to user message
+        user_message = "يرجى الإجابة باللغة العربية فقط. " + user_message
+    else:
+        lang_instruction = (
+            "You are a professional support agent. Only answer questions based on the provided documents. "
+            "Use professional and concise language. Format your answers with clear paragraphs, bullet points for lists, and bold for key terms. Do not use code blocks or unnecessary markdown. "
+            "If the user's question is in a different language than the document data, translate the relevant information from the documents and answer in the user's language. "
+            "Always answer in English only. If you do not know the answer from the documents, say 'I'm sorry, I do not have that information.' "
+            "IMPORTANT: Never mention phrases like 'the provided text', 'the provided context', or similar. Always answer as if you know the information directly as a support agent."
+        )
 
     # Get or initialize chat history in session
     chat_history = session.get('chat_history', [])
@@ -77,10 +103,12 @@ def chat():
         # Add system prompt only at the start
         chat_history.append({
             "role": "system",
-            "content": "Your name is Proto AI. You are a helpful, friendly AI assistant, but users should see you as 'Proto AI'. You have a slightly playful and enthusiastic personality. You're knowledgeable, curious, and always willing to help."
+            "content": lang_instruction
         })
-    # Add language instruction as a system message for this turn
-    chat_history.append({"role": "system", "content": lang_instruction})
+    else:
+        # Replace previous system prompt with new one for each turn
+        chat_history = [msg for msg in chat_history if msg['role'] != 'system']
+        chat_history.insert(0, {"role": "system", "content": lang_instruction})
     # Add user message
     chat_history.append({"role": "user", "content": user_message})
 
@@ -88,7 +116,7 @@ def chat():
     index = get_llama_index()
     if not index:
         return jsonify({'error': 'No documents indexed yet'}), 400
-    llm = Ollama(model='gemma2:2b')
+    llm = Ollama(model='gemma2:2b', system_prompt=lang_instruction)
     query_engine = index.as_query_engine(llm=llm, embed_model=embed_model)
     try:
         answer = query_engine.query(user_message)
@@ -103,6 +131,14 @@ def chat():
                 'user_message': user_message,
                 'detected_language': lang_name
             }, f, ensure_ascii=False, indent=2)
+        # Delete all user-uploaded files after answering
+        for fname in os.listdir(UPLOAD_DIR):
+            fpath = os.path.join(UPLOAD_DIR, fname)
+            try:
+                if os.path.isfile(fpath):
+                    os.remove(fpath)
+            except Exception:
+                pass
         return jsonify({'message': str(answer)})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -144,6 +180,9 @@ ALLOWED_EXTENSIONS = {'pdf', 'docx', 'txt', 'png', 'jpg', 'jpeg'}
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+UPLOAD_DIR = 'uploaded_docs'
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
@@ -153,25 +192,17 @@ def upload_file():
         return jsonify({'error': 'No selected file'}), 400
     if file and allowed_file(file.filename):
         filename = secure_filename(file.filename)
-        temp_path = os.path.join(tempfile.gettempdir(), filename)
-        file.save(temp_path)
-        # Load and index the file
-        ext = filename.rsplit('.', 1)[1].lower()
-        if ext == 'pdf':
-            doc = PDFReader().load_data(temp_path)
-        elif ext == 'docx':
-            doc = DocxReader().load_data(temp_path)
-        elif ext in {'png', 'jpg', 'jpeg'}:
-            doc = ImageReader().load_data(temp_path)
-        else:
-            with open(temp_path, 'r', encoding='utf-8') as f:
-                doc = [f.read()]
-        # Add to index (in-memory for now, or you can persist)
+        save_path = os.path.join(UPLOAD_DIR, filename)
+        file.save(save_path)
+        # Rebuild index from admin doc + all uploaded docs using SimpleDirectoryReader
+        all_docs = []
+        if os.path.exists(ADMIN_DOC_PATH):
+            all_docs.extend(DocxReader().load_data(ADMIN_DOC_PATH))
+        if os.listdir(UPLOAD_DIR):
+            all_docs.extend(SimpleDirectoryReader(UPLOAD_DIR).load_data())
         global llama_index
-        if llama_index is not None:
-            llama_index.insert_documents(doc)
-        else:
-            llama_index = VectorStoreIndex.from_documents(doc, embed_model=embed_model)
+        llama_index = VectorStoreIndex.from_documents(all_docs, embed_model=embed_model)
+        llama_index.storage_context.persist(persist_dir=llama_index_storage_dir)
         return jsonify({'success': True, 'filename': filename})
     return jsonify({'error': 'File type not allowed'}), 400
 

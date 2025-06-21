@@ -12,26 +12,82 @@
     <div class="chat-container">
         <div class="chat-header">
             <h2><i class="fas fa-robot me-2"></i> <span class="proto-ai-logo">PROTO<span class="highlight">AI</span></span></h2>
-            <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode">
-                <i class="fas fa-sun"></i>
-            </button>
+            <div class="d-flex align-items-center gap-2">
+                <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode">
+                    <i class="fas fa-sun"></i>
+                </button>
+                <button id="lang-toggle" class="lang-toggle" type="button" title="Change language" style="font-size:1.2em;">
+                    <i class="fas fa-globe"></i>
+                </button>
+            </div>
         </div>
+        <!-- Uploaded files bar -->
+        <div id="uploaded-files-bar" class="px-3 py-2" style="display:none; background:#232946; color:#fff; border-bottom:1px solid #444; font-size:0.95em;"></div>
         <div class="chat-body">
             <div class="chat-messages" id="chat-messages">
-                <div class="message bot-message">
+                <div class="message bot-message" id="welcome-message">
                     Hello! I'm Proto AI, your intelligent assistant. How can I help you today?
                 </div>
             </div>
         </div>
-        <div class="chat-input">
+        <div class="chat-input d-flex align-items-center gap-2">
             <input type="text" id="message-input" class="form-control" placeholder="Ask Proto AI anything...">
+            <input type="file" id="fileInput" name="file" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg" style="display:none;">
+            <button id="uploadBtn" class="btn btn-outline-secondary" type="button" title="Upload File">
+                <i class="fas fa-paperclip"></i>
+            </button>
             <button id="send-button" class="btn btn-primary">
                 <i class="fas fa-paper-plane"></i>
             </button>
         </div>
+        <div id="uploadStatus" class="mb-2 px-2 text-info small"></div>
     </div>
-
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/upload.js') }}"></script>
+    <script>
+    // UI: clicking the upload button triggers the file input
+    document.getElementById('uploadBtn').addEventListener('click', function() {
+        document.getElementById('fileInput').click();
+    });
+    // Show uploaded file name on upload
+    window.showUploadedFile = function(filename) {
+        const bar = document.getElementById('uploaded-files-bar');
+        const lang = localStorage.getItem('protoai_lang') || 'en';
+        bar.textContent = lang === 'ar' ? 'تم رفع الملف: ' + filename : 'Uploaded: ' + filename;
+        bar.style.display = 'block';
+    };
+    // Language switcher icon
+    document.getElementById('lang-toggle').addEventListener('click', function() {
+        const current = localStorage.getItem('protoai_lang') || 'en';
+        const next = current === 'ar' ? 'en' : 'ar';
+        localStorage.setItem('protoai_lang', next);
+        location.reload();
+    });
+    // UI translations
+    const translations = {
+        en: {
+            welcome: "Hello! I'm Proto AI, your intelligent assistant. How can I help you today?",
+            placeholder: "Ask Proto AI anything...",
+            upload: "Upload File",
+        },
+        ar: {
+            welcome: "مرحباً! أنا بروتو AI، مساعدك الذكي. كيف يمكنني مساعدتك اليوم؟",
+            placeholder: "اسأل بروتو AI أي شيء...",
+            upload: "رفع ملف"
+        }
+    };
+    // On load, set language and UI
+    (function() {
+        const lang = localStorage.getItem('protoai_lang') || 'en';
+        document.documentElement.lang = lang;
+        document.body.dir = lang === 'ar' ? 'rtl' : 'ltr';
+        document.getElementById('welcome-message').textContent = translations[lang].welcome;
+        document.getElementById('message-input').placeholder = translations[lang].placeholder;
+        document.getElementById('uploadBtn').title = translations[lang].upload;
+        // Optionally, change send button icon direction for RTL
+        document.getElementById('send-button').innerHTML = lang === 'ar' ? '<i class="fas fa-paper-plane fa-flip-horizontal"></i>' : '<i class="fas fa-paper-plane"></i>';
+    })();
+    </script>
 </body>
 </html>
