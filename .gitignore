@@ -27,6 +27,8 @@ var/
 # Testing
 last_prompt.json
 YouLearnt_logic.docx
+ngrok.exe
+
 
 #Client/server Side only
 uploaded_docs/
