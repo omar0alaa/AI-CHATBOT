@@ -28,8 +28,9 @@ var/
 last_prompt.json
 YouLearnt_logic.docx
 
-#user related
+#Client/server Side only
 uploaded_docs/
+llamaindex_storage/
 
 # Virtual Environment
 venv/
