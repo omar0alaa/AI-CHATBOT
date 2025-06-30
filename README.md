@@ -22,7 +22,7 @@ A web-based AI chatbot built with Python Flask and Ollama for local LLM inferenc
 ## Prerequisites
 
 1. Install [Ollama](https://ollama.com/) on your computer or server
-2. Download a language model through Ollama (e.g., llama3, gemma2:2b, etc.)
+2. Download a language model through Ollama (e.g., llama3, gemma3:4b, etc.)
 3. Start the Ollama server
 
 ## Ollama Setup
@@ -30,9 +30,9 @@ A web-based AI chatbot built with Python Flask and Ollama for local LLM inferenc
 1. Download and install Ollama from [ollama.com](https://ollama.com/)
 2. Open a terminal and run:
    ```
-   ollama run gemma2:2b
+   ollama run gemma3:4b
    ```
-   Or replace `gemma2:2b` with your preferred model.
+   Or replace `gemma3:4b` with your preferred model.
 3. The server should be running on http://localhost:11434 by default
 
 ## Chatbot Setup
@@ -60,7 +60,7 @@ A web-based AI chatbot built with Python Flask and Ollama for local LLM inferenc
 4. (Optional) Create a `.env` file to customize the Ollama API endpoint or model:
    ```
    OLLAMA_API_URL=http://localhost:11434/api/chat
-   OLLAMA_MODEL=gemma2:2b
+   OLLAMA_MODEL=gemma3:4b
    ```
 
 5. Run the application:
@@ -98,6 +98,9 @@ A web-based AI chatbot built with Python Flask and Ollama for local LLM inferenc
 7. Better Token usage efficiency ✅
 8. implement better session handling (for each user) ✅
 9. implement File handling ✅
+10. better prompt refactoring ✅
+11. read whole file before answering ✅
+12. Add post-processing filter
 
 ## Deployment
 
@@ -109,64 +112,19 @@ This application is designed to work with a local Ollama server. For production 
    - Make sure Ollama is running and your model is loaded:
      ```
      ollama serve &
-     ollama run gemma2:2b &
+     ollama run gemma3:4b &
      ```
    - You may want to use a process manager (like `systemd` or `pm2`) to keep Ollama running.
 
-2. **Run Flask with Gunicorn (recommended for production)**
-   - Install Gunicorn:
-     ```
-     pip install gunicorn
-     ```
-   - Start the Flask app with Gunicorn (use 2-4 workers for small servers):
-     ```
-     gunicorn -w 4 -b 0.0.0.0:5000 app:app
-     ```
-
-### Running with Waitress (Windows-friendly)
-
-1. Install Waitress:
+2. **Running with Waitress (recommended for production)**
+   - Install Waitress:
    ```
    pip install waitress
    ```
-2. Run the Flask app with Waitress:
+   - Run the Flask app with Waitress:
    ```
    waitress-serve --port=5000 app:app
    ```
    - You can change the port as needed.
    - Waitress is a good choice for production on Windows servers.
-
-3. **(Optional) Use a reverse proxy (Nginx/Apache) for SSL and static files**
-   - Set up Nginx to proxy requests to Gunicorn and serve static files efficiently.
-   - Example Nginx config:
-     ```
-     server {
-         listen 80;
-         server_name yourdomain.com;
-
-         location /static/ {
-             alias /path/to/AIChatBot-Python/static/;
-         }
-
-         location / {
-             proxy_pass http://127.0.0.1:5000;
-             proxy_set_header Host $host;
-             proxy_set_header X-Real-IP $remote_addr;
-             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-             proxy_set_header X-Forwarded-Proto $scheme;
-         }
-     }
-     ```
-
-4. **Secure your deployment**
-   - Use HTTPS (Let's Encrypt or similar)
-   - Set a strong `FLASK_SECRET_KEY` in your `.env` file
-   - Restrict file upload types and size as needed
-
-5. **Monitor and maintain**
-   - Use process managers (systemd, supervisor, pm2) to keep Gunicorn and Ollama running
-   - Monitor logs and resource usage
-
-## License
-
-See the LICENSE file for details.
+   ```

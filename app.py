@@ -14,6 +14,7 @@ from llama_index.readers.file import PDFReader, DocxReader, ImageReader
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 import tempfile
 from langdetect import detect
+from persona import get_persona_prompt
 
 # Load environment variables
 load_dotenv()
@@ -69,33 +70,18 @@ def chat():
     elif ui_lang == 'en':
         user_lang = 'en'
     else:
-        # Fallback to language detection
         try:
             user_lang = detect(user_message)
         except Exception:
             user_lang = 'en'
     lang_map = {'en': 'English', 'ar': 'Arabic'}
     lang_name = lang_map.get(user_lang, user_lang)
-    # Use explicit formatting instructions for each language
+    # Get persona/system prompt from persona.py
+    lang_instruction = get_persona_prompt(user_lang)
+    
+    # If the user language is Arabic, prepend instruction to answer in Arabic
     if user_lang == 'ar':
-        lang_instruction = (
-            "أنت وكيل دعم محترف. أجب فقط على الأسئلة بناءً على المستندات المقدمة. استخدم لغة رسمية وواضحة. "
-            "نسق إجاباتك بفقرات واضحة، واستخدم النقاط للقوائم، واجعل الكلمات الرئيسية بارزة (غامقة). لا تستخدم كود أو علامات ترقيم غير ضرورية. "
-            "إذا كان سؤال المستخدم بلغة مختلفة عن لغة البيانات، ترجم المعلومات ذات الصلة من المستندات وأجب بلغة المستخدم. "
-            "أجب دائماً باللغة العربية فقط، مهما كانت لغة السؤال. لا تستخدم الإنجليزية في الإجابة أبداً. إذا أجبت بغير العربية فهذا خطأ. IMPORTANT: Always answer in Arabic only, never in English, no matter what language the question is. "
-            "إذا لم تكن تعرف الإجابة من المستندات، قل: 'عذراً، لا أملك هذه المعلومة.' "
-            "مهم: لا تذكر أبداً عبارات مثل 'النص المقدم' أو 'السياق المقدم' أو ما شابه في إجابتك. أجب وكأنك تعرف المعلومة مباشرة كوكيل دعم."
-        )
-        # Prepend Arabic instruction to user message
         user_message = "يرجى الإجابة باللغة العربية فقط. " + user_message
-    else:
-        lang_instruction = (
-            "You are a professional support agent. Only answer questions based on the provided documents. "
-            "Use professional and concise language. Format your answers with clear paragraphs, bullet points for lists, and bold for key terms. Do not use code blocks or unnecessary markdown. "
-            "If the user's question is in a different language than the document data, translate the relevant information from the documents and answer in the user's language. "
-            "Always answer in English only. If you do not know the answer from the documents, say 'I'm sorry, I do not have that information.' "
-            "IMPORTANT: Never mention phrases like 'the provided text', 'the provided context', or similar. Always answer as if you know the information directly as a support agent."
-        )
 
     # Get or initialize chat history in session
     chat_history = session.get('chat_history', [])
@@ -116,7 +102,7 @@ def chat():
     index = get_llama_index()
     if not index:
         return jsonify({'error': 'No documents indexed yet'}), 400
-    llm = Ollama(model='gemma2:2b', system_prompt=lang_instruction)
+    llm = Ollama(model='gemma3:4b', system_prompt=lang_instruction)
     query_engine = index.as_query_engine(llm=llm, embed_model=embed_model)
     try:
         answer = query_engine.query(user_message)
@@ -216,7 +202,7 @@ def llama_query():
     index = get_llama_index()
     if not index:
         return jsonify({'error': 'No documents indexed yet'}), 400
-    llm = Ollama(model='gemma2:2b')
+    llm = Ollama(model='gemma3:4b')
     query_engine = index.as_query_engine(llm=llm, embed_model=embed_model)
     answer = query_engine.query(question)
     return jsonify({'answer': str(answer)})
