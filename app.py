@@ -19,6 +19,7 @@ import re
 from difflib import SequenceMatcher
 from postprocess import contains_forbidden_phrase, get_fallback_message
 import hashlib
+from rewrite import rewrite_to_compliant
 
 # Load environment variables
 load_dotenv()
@@ -113,7 +114,14 @@ def chat():
         original_answer = str(answer)
         # Post-processing filter for forbidden phrases
         if contains_forbidden_phrase(original_answer, user_lang):
-            answer = get_fallback_message(user_lang)
+            # Try to rewrite the answer to be compliant, or fallback if not relevant
+            fallback_message = get_fallback_message(user_lang)
+            rewritten = rewrite_to_compliant(original_answer, user_message, user_lang, fallback_message)
+            # If rewriting fails or is empty, use fallback
+            if not rewritten or rewritten == original_answer:
+                answer = fallback_message
+            else:
+                answer = rewritten
         processed_answer = str(answer)
         # Add assistant reply to chat history
         chat_history.append({"role": "assistant", "content": processed_answer})

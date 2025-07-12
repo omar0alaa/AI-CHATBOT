@@ -13,3 +13,5 @@ pillow
 docx2txt
 langdetect
 werkzeug
+transformers
+torch

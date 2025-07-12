@@ -39,6 +39,8 @@ FORBIDDEN_PHRASES = {
         "i cannot",
         "provided text",
         "provided document",
+        "provided context",
+        "provided information",
         "The context",
         "the context",
         "The text",
