@@ -15,6 +15,10 @@ from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 import tempfile
 from langdetect import detect
 from persona import get_persona_prompt
+import re
+from difflib import SequenceMatcher
+from postprocess import contains_forbidden_phrase, get_fallback_message
+import hashlib
 
 # Load environment variables
 load_dotenv()
@@ -102,12 +106,17 @@ def chat():
     index = get_llama_index()
     if not index:
         return jsonify({'error': 'No documents indexed yet'}), 400
-    llm = Ollama(model='gemma3:4b', system_prompt=lang_instruction)
+    llm = Ollama(model='gemma3:1b', system_prompt=lang_instruction)
     query_engine = index.as_query_engine(llm=llm, embed_model=embed_model)
     try:
         answer = query_engine.query(user_message)
+        original_answer = str(answer)
+        # Post-processing filter for forbidden phrases
+        if contains_forbidden_phrase(original_answer, user_lang):
+            answer = get_fallback_message(user_lang)
+        processed_answer = str(answer)
         # Add assistant reply to chat history
-        chat_history.append({"role": "assistant", "content": str(answer)})
+        chat_history.append({"role": "assistant", "content": processed_answer})
         session['chat_history'] = chat_history
         # Output the prompt to a file for inspection, with more details
         with open('last_prompt.json', 'w', encoding='utf-8') as f:
@@ -115,7 +124,9 @@ def chat():
                 'timestamp': __import__('datetime').datetime.now().isoformat(),
                 'chat_history': chat_history,
                 'user_message': user_message,
-                'detected_language': lang_name
+                'detected_language': lang_name,
+                'original_ai_response': original_answer,
+                'postprocessed_response': processed_answer
             }, f, ensure_ascii=False, indent=2)
         # Delete all user-uploaded files after answering
         for fname in os.listdir(UPLOAD_DIR):
@@ -129,27 +140,56 @@ def chat():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# --- Hash for Checking admin document changes ---
+def file_md5(filepath):
+    hash_md5 = hashlib.md5()
+    with open(filepath, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_md5.update(chunk)
+    return hash_md5.hexdigest()
+
 # --- LlamaIndex Setup ---
-# Preload admin document (e.g. YouLearnt_logic.docx) at startup
-ADMIN_DOC_PATH = 'YouLearnt_logic.docx'
+ADMIN_DOC_PATH = 'YouLearnt_Final.docx'
 llama_index = None
 llama_docs = []
 llama_index_storage_dir = './llamaindex_storage'
+ADMIN_DOC_HASH_PATH = './admin_doc.hash'
 
 # Use a local HuggingFace embedding model
 embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
+admin_doc_hash = None
 if os.path.exists(ADMIN_DOC_PATH):
-    # Load admin doc at startup
-    llama_docs = DocxReader().load_data(ADMIN_DOC_PATH)  # FIX: do not wrap in list
-    # Build index and persist
+    admin_doc_hash = file_md5(ADMIN_DOC_PATH)
+
+# Check if index exists and admin doc hash matches
+def admin_doc_hash_matches():
+    if not os.path.exists(ADMIN_DOC_HASH_PATH):
+        return False
+    try:
+        with open(ADMIN_DOC_HASH_PATH, 'r') as f:
+            stored_hash = f.read().strip()
+        return stored_hash == admin_doc_hash
+    except Exception:
+        return False
+
+if os.path.exists(llama_index_storage_dir) and admin_doc_hash_matches():
+    # Load index from storage if it exists and admin doc hasn't changed
+    storage_context = StorageContext.from_defaults(persist_dir=llama_index_storage_dir)
+    llama_index = load_index_from_storage(storage_context, embed_model=embed_model)
+elif os.path.exists(ADMIN_DOC_PATH):
+    # Build index if it doesn't exist or admin doc changed
+    llama_docs = DocxReader().load_data(ADMIN_DOC_PATH)
     index = VectorStoreIndex.from_documents(llama_docs, show_progress=True, embed_model=embed_model)
     index.storage_context.persist(persist_dir=llama_index_storage_dir)
     llama_index = index
+    # Save new hash
+    with open(ADMIN_DOC_HASH_PATH, 'w') as f:
+        f.write(admin_doc_hash)
 else:
     llama_index = None
 
-# Helper: load or reload index from storage
+#load or reload index from storage
 def get_llama_index():
     global llama_index
     if llama_index is not None:
@@ -202,7 +242,7 @@ def llama_query():
     index = get_llama_index()
     if not index:
         return jsonify({'error': 'No documents indexed yet'}), 400
-    llm = Ollama(model='gemma3:4b')
+    llm = Ollama(model='gemma3:1b')
     query_engine = index.as_query_engine(llm=llm, embed_model=embed_model)
     answer = query_engine.query(question)
     return jsonify({'answer': str(answer)})
