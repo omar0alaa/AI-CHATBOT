@@ -109,19 +109,31 @@ def chat():
         return jsonify({'error': 'No documents indexed yet'}), 400
     llm = Ollama(model='gemma3:1b', system_prompt=lang_instruction)
     query_engine = index.as_query_engine(llm=llm, embed_model=embed_model)
+    fallback_message = get_fallback_message(user_lang)
     try:
-        answer = query_engine.query(user_message)
-        original_answer = str(answer)
-        # Post-processing filter for forbidden phrases
-        if contains_forbidden_phrase(original_answer, user_lang):
-            # Try to rewrite the answer to be compliant, or fallback if not relevant
-            fallback_message = get_fallback_message(user_lang)
-            rewritten = rewrite_to_compliant(original_answer, user_message, user_lang, fallback_message)
-            # If rewriting fails or is empty, use fallback
-            if not rewritten or rewritten == original_answer:
-                answer = fallback_message
-            else:
-                answer = rewritten
+        # --- Relevance threshold logic ---
+        # Get top retrieved node and its similarity score
+        retriever = index.as_retriever()
+        retrieved_nodes = retriever.retrieve(user_message)
+        top_score = None
+        if retrieved_nodes and hasattr(retrieved_nodes[0], 'score'):
+            top_score = retrieved_nodes[0].score
+        # If no relevant node or score is too low, return fallback
+        if top_score is None or top_score < 0.001:
+            print(f"[preFILTER] No relevant documents found or score too low: {top_score}")
+            answer = fallback_message
+            original_answer = ""
+        else:
+            print(f"[preFILTER] Found relevant documents with score: {top_score}")
+            answer = query_engine.query(user_message)
+            original_answer = str(answer)
+            # Post-processing filter for forbidden phrases
+            if contains_forbidden_phrase(original_answer, user_lang):
+                rewritten = rewrite_to_compliant(original_answer, user_message, user_lang, fallback_message)
+                if not rewritten or rewritten == original_answer:
+                    answer = fallback_message
+                else:
+                    answer = rewritten
         processed_answer = str(answer)
         # Add assistant reply to chat history
         chat_history.append({"role": "assistant", "content": processed_answer})

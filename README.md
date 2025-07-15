@@ -102,6 +102,8 @@ A web-based AI chatbot built with Python Flask and Ollama for local LLM inferenc
 11. read whole file before answering ✅
 12. Add post-processing filter
 
+# content on the database question
+
 ## Deployment
 
 This application is designed to work with a local Ollama server. For production use, consider running both the Flask application and Ollama on the same server.
