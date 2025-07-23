@@ -33,6 +33,7 @@ ngrok.exe
 #Client/server Side only
 uploaded_docs/
 llamaindex_storage/
+error_log.txt
 
 # Virtual Environment
 venv/

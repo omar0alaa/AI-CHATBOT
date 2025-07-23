@@ -1,3 +1,5 @@
+import time
+
 from flask import Flask, request, jsonify, render_template, session
 import requests
 import os
@@ -48,7 +50,13 @@ app.config['SESSION_PERMANENT'] = False
 Session(app)
 
 # OLLAMA API endpoint (default for local server)
-OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://localhost:11434/api/chat")
+OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://161.97.147.7:11434/api/chat")
+
+# Dummy endpoint to test Flask timeout behavior
+@app.route('/api/dummy_wait', methods=['GET'])
+def dummy_wait():
+    time.sleep(90)  # Wait for 90 seconds
+    return jsonify({'message': 'Waited 90 seconds and did not timeout.'})
 
 @app.route('/')
 def index():
@@ -107,7 +115,16 @@ def chat():
     index = get_llama_index()
     if not index:
         return jsonify({'error': 'No documents indexed yet'}), 400
-    llm = Ollama(model='gemma3:1b', system_prompt=lang_instruction)
+    # Ensure Ollama client uses the correct base_url (strip /api/chat if present)
+    ollama_base_url = OLLAMA_API_URL.replace('/api/chat', '')
+
+    llm = Ollama(
+        model='gemma3:1b',
+        system_prompt=lang_instruction,
+        base_url=ollama_base_url,
+        request_timeout=300.0,
+        context_window=2048
+    )
     query_engine = index.as_query_engine(llm=llm, embed_model=embed_model)
     fallback_message = get_fallback_message(user_lang)
     try:
@@ -158,7 +175,13 @@ def chat():
                 pass
         return jsonify({'message': str(answer)})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        import traceback
+        tb_str = traceback.format_exc()
+        print(f"[ERROR] Exception in /api/chat: {str(e)}\nTraceback:\n{tb_str}")
+        # Optionally, write to a log file for persistent debugging
+        with open('error_log.txt', 'a', encoding='utf-8') as logf:
+            logf.write(f"[ERROR] {__import__('datetime').datetime.now().isoformat()}\n{tb_str}\n\n")
+        return jsonify({'error': str(e), 'traceback': tb_str}), 500
 
 # --- Hash for Checking admin document changes ---
 def file_md5(filepath):
@@ -262,7 +285,15 @@ def llama_query():
     index = get_llama_index()
     if not index:
         return jsonify({'error': 'No documents indexed yet'}), 400
-    llm = Ollama(model='gemma3:1b')
+    # Ensure Ollama client uses the correct base_url (strip /api/chat if present)
+    ollama_base_url = OLLAMA_API_URL.replace('/api/chat', '')
+    
+    llm = Ollama(
+        model='gemma3:1b',
+        base_url=ollama_base_url,
+        request_timeout=300.0,
+        context_window=2048
+    )
     query_engine = index.as_query_engine(llm=llm, embed_model=embed_model)
     answer = query_engine.query(question)
     return jsonify({'answer': str(answer)})
