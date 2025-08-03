@@ -139,7 +139,7 @@ def chat():
             user_lang = 'en'
     lang_instruction = get_persona_prompt(user_lang)
     if user_lang == 'ar':
-        user_message = "يرجى الإجابة باللغة العربية فقط. " + user_message
+        user_message = user_message
 
     # Flask session for chat history
     if 'chat_history' not in session:
