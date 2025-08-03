@@ -4,23 +4,14 @@ import requests
 import os
 from dotenv import load_dotenv
 import json
+import sqlite3
 import nltk
-from sumy.parsers.plaintext import PlaintextParser
-from sumy.nlp.tokenizers import Tokenizer
-from sumy.summarizers.lsa import LsaSummarizer
 from flask_session import Session
-from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, StorageContext, load_index_from_storage
-from llama_index.llms.ollama import Ollama
-from llama_index.readers.file import PDFReader, DocxReader, ImageReader
-from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-import tempfile
 from langdetect import detect
 from persona import get_persona_prompt
 import re
 from difflib import SequenceMatcher
 from postprocess import contains_forbidden_phrase, get_fallback_message
-import hashlib
-from rewrite import rewrite_to_compliant
 
 # Load environment variables
 load_dotenv()
@@ -30,53 +21,61 @@ try:
     nltk.data.find('tokenizers/punkt')
 except LookupError:
     nltk.download('punkt')
-try:
-    nltk.data.find('tokenizers/punkt_tab/english.pickle')
-except LookupError:
-    try:
-        nltk.download('punkt_tab')
-    except Exception:
-        pass
 
-# Initialize Flask app
+
 app = Flask(__name__, static_folder='static')
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'protoai-secret-key')
-
-# Configure server-side session
 app.config['SESSION_TYPE'] = 'filesystem'
-app.config['SESSION_FILE_DIR'] = './flask_session/'
-app.config['SESSION_PERMANENT'] = False
 Session(app)
-
-# OLLAMA API endpoint (default for local server)
-OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://localhost:11434/api/chat")
-
-# Dummy endpoint to test Flask timeout behavior
-@app.route('/api/dummy_wait', methods=['GET'])
-def dummy_wait():
-    time.sleep(90)  # Wait for 90 seconds
-    return jsonify({'message': 'Waited 90 seconds and did not timeout.'})
 
 @app.route('/')
 def index():
-    #Render the chat interface.
     return render_template('index.html')
 
 @app.route('/widget')
 def widget():
-    #Render the widget chat interface.
     return render_template('widget.html')
+
+DB_PATH = 'youlearnt_bank.db'
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS youlearnt_bank (
+        ID INTEGER PRIMARY KEY AUTOINCREMENT,
+        question TEXT NOT NULL,
+        answer TEXT NOT NULL
+    )''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def get_answer_from_db(user_message):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT question, answer FROM youlearnt_bank')
+    rows = c.fetchall()
+    conn.close()
+    # Find top 3 most similar Q&A pairs
+    scored = []
+    for q, a in rows:
+        score = SequenceMatcher(None, user_message.lower(), q.lower()).ratio()
+        scored.append((score, q, a))
+    scored.sort(reverse=True)
+    # Return top 3 answers above threshold
+    top_contexts = [a for s, q, a in scored[:3] if s >= 0.5]
+    return top_contexts
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
-    # Process user messages and get AI responses from LlamaIndex (document Q&A) using Ollama
     data = request.json
     user_message = data.get('message', '')
-    ui_lang = data.get('lang')  # Get website language from frontend
+    ui_lang = data.get('lang')
     if not user_message:
         return jsonify({'error': 'No message provided'}), 400
 
-    # Determine answer language: use UI language if provided, else detect from message
+    # Language detection and persona
     if ui_lang == 'ar':
         user_lang = 'ar'
     elif ui_lang == 'en':
@@ -86,216 +85,83 @@ def chat():
             user_lang = detect(user_message)
         except Exception:
             user_lang = 'en'
-    lang_map = {'en': 'English', 'ar': 'Arabic'}
-    lang_name = lang_map.get(user_lang, user_lang)
-    # Get persona/system prompt from persona.py
     lang_instruction = get_persona_prompt(user_lang)
-    
-    # If the user language is Arabic, prepend instruction to answer in Arabic
     if user_lang == 'ar':
         user_message = "يرجى الإجابة باللغة العربية فقط. " + user_message
 
-    # Get or initialize chat history in session
-    chat_history = session.get('chat_history', [])
-    if not chat_history:
-        # Add system prompt only at the start
-        chat_history.append({
-            "role": "system",
-            "content": lang_instruction
-        })
-    else:
-        # Replace previous system prompt with new one for each turn
-        chat_history = [msg for msg in chat_history if msg['role'] != 'system']
-        chat_history.insert(0, {"role": "system", "content": lang_instruction})
-    # Add user message
+    # Flask session for chat history
+    if 'chat_history' not in session:
+        session['chat_history'] = []
+    chat_history = session['chat_history']
+    # Always keep persona/system prompt at the start
+    chat_history = [msg for msg in chat_history if msg['role'] != 'system']
+    chat_history.insert(0, {"role": "system", "content": lang_instruction})
     chat_history.append({"role": "user", "content": user_message})
+    session['chat_history'] = chat_history
 
-    # Use LlamaIndex to answer the user's question based on indexed documents
-    index = get_llama_index()
-    if not index:
-        return jsonify({'error': 'No documents indexed yet'}), 400
-    # Ensure Ollama client uses the correct base_url (strip /api/chat if present)
-    ollama_base_url = OLLAMA_API_URL.replace('/api/chat', '')
-
-    llm = Ollama(
-        model='gemma3:1b',
-        system_prompt=lang_instruction,
-        base_url=ollama_base_url,
-        request_timeout=300.0
-    )
-    query_engine = index.as_query_engine(llm=llm, embed_model=embed_model)
+    # --- Knowledge base retrieval ---
+    contexts = get_answer_from_db(user_message)
     fallback_message = get_fallback_message(user_lang)
+
+    ollama_url = os.getenv("OLLAMA_API_URL", "http://localhost:11434/api/generate")
+    model_name = os.getenv("OLLAMA_MODEL", "gemma3:1b")
+    if not contexts:
+        print(f"[DB] No relevant contexts found for: {user_message}")
+        # Persona-only prompt, no knowledge base
+        prompt = (
+            f"{lang_instruction}\n\nUser Question: {user_message}\n\n"
+            "Instructions:\n"
+            "- If the user is greeting (e.g. 'hi', 'hello', 'good morning', 'can you help me', 'I need help'), respond with a friendly greeting and offer assistance (e.g. 'Hello! How can I help you today?').\n"
+            "- If the user asks a question and you do not know the answer, reply with: 'Please rephrase your question or contact our customer support.'\n"
+            "- Do not make up information.\n"
+            "- Always answer as a professional support agent."
+        )
+    else:
+        # Build context string for Ollama
+        context_str = "\n".join([f"- {c}" for c in contexts])
+        prompt = f"{lang_instruction}\n\nKnowledge Base:\n{context_str}\n\nUser Question: {user_message}\n\nAnswer strictly using the above knowledge base."
+    payload = {
+        "model": model_name,
+        "prompt": prompt,
+        "stream": False
+    }
     try:
-        # --- Relevance threshold logic ---
-        # Get top retrieved node and its similarity score
-        retriever = index.as_retriever()
-        retrieved_nodes = retriever.retrieve(user_message)
-        top_score = None
-        if retrieved_nodes and hasattr(retrieved_nodes[0], 'score'):
-            top_score = retrieved_nodes[0].score
-        # If no relevant node or score is too low, return fallback
-        if top_score is None or top_score < 0.001:
-            print(f"[preFILTER] No relevant documents found or score too low: {top_score}")
-            answer = fallback_message
-            original_answer = ""
-        else:
-            print(f"[preFILTER] Found relevant documents with score: {top_score}")
-            answer = query_engine.query(user_message)
-            original_answer = str(answer)
-            # Post-processing filter for forbidden phrases
-            if contains_forbidden_phrase(original_answer, user_lang):
-                print(f"[FILTER] Checking for forbidden phrases in AI response")
-                rewritten = rewrite_to_compliant(original_answer, user_message, user_lang, fallback_message)
-                if not rewritten or rewritten == original_answer:
-                    answer = fallback_message
-                else:
-                    answer = rewritten
-        processed_answer = str(answer)
-        # Add assistant reply to chat history
-        chat_history.append({"role": "assistant", "content": processed_answer})
-        session['chat_history'] = chat_history
-        # Output the prompt to a file for inspection, with more details
-        with open('last_prompt.json', 'w', encoding='utf-8') as f:
-            json.dump({
-                'timestamp': __import__('datetime').datetime.now().isoformat(),
-                'chat_history': chat_history,
-                'user_message': user_message,
-                'detected_language': lang_name,
-                'original_ai_response': original_answer,
-                'postprocessed_response': processed_answer
-            }, f, ensure_ascii=False, indent=2)
-        # Delete all user-uploaded files after answering
-        for fname in os.listdir(UPLOAD_DIR):
-            fpath = os.path.join(UPLOAD_DIR, fname)
-            try:
-                if os.path.isfile(fpath):
-                    os.remove(fpath)
-            except Exception:
-                pass
-        return jsonify({'message': str(answer)})
+        resp = requests.post(ollama_url, json=payload, timeout=60)
+        resp.raise_for_status()
+        result = resp.json()
+        answer = result.get("response", fallback_message)
     except Exception as e:
-        import traceback
-        tb_str = traceback.format_exc()
-        print(f"[ERROR] Exception in /api/chat: {str(e)}\nTraceback:\n{tb_str}")
-        # Optionally, write to a log file for persistent debugging
-        with open('error_log.txt', 'a', encoding='utf-8') as logf:
-            logf.write(f"[ERROR] {__import__('datetime').datetime.now().isoformat()}\n{tb_str}\n\n")
-        return jsonify({'error': str(e), 'traceback': tb_str}), 500
+        answer = fallback_message
 
-# --- Hash for Checking admin document changes ---
-def file_md5(filepath):
-    hash_md5 = hashlib.md5()
-    with open(filepath, "rb") as f:
-        for chunk in iter(lambda: f.read(4096), b""):
-            hash_md5.update(chunk)
-    return hash_md5.hexdigest()
-
-# --- LlamaIndex Setup ---
-ADMIN_DOC_PATH = 'YouLearnt_Final.docx'
-llama_index = None
-llama_docs = []
-llama_index_storage_dir = './llamaindex_storage'
-ADMIN_DOC_HASH_PATH = './admin_doc.hash'
-
-# Use a local HuggingFace embedding model
-embed_model = HuggingFaceEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2", device="cpu")
-
-admin_doc_hash = None
-if os.path.exists(ADMIN_DOC_PATH):
-    admin_doc_hash = file_md5(ADMIN_DOC_PATH)
-
-# Check if index exists and admin doc hash matches
-def admin_doc_hash_matches():
-    if not os.path.exists(ADMIN_DOC_HASH_PATH):
-        return False
+    # Post-processing filter for forbidden phrases
+    answer_original = answer
     try:
-        with open(ADMIN_DOC_HASH_PATH, 'r') as f:
-            stored_hash = f.read().strip()
-        return stored_hash == admin_doc_hash
-    except Exception:
-        return False
-
-if os.path.exists(llama_index_storage_dir) and admin_doc_hash_matches():
-    # Load index from storage if it exists and admin doc hasn't changed
-    storage_context = StorageContext.from_defaults(persist_dir=llama_index_storage_dir)
-    llama_index = load_index_from_storage(storage_context, embed_model=embed_model)
-elif os.path.exists(ADMIN_DOC_PATH):
-    # Build index if it doesn't exist or admin doc changed
-    llama_docs = DocxReader().load_data(ADMIN_DOC_PATH)
-    index = VectorStoreIndex.from_documents(llama_docs, show_progress=True, embed_model=embed_model)
-    index.storage_context.persist(persist_dir=llama_index_storage_dir)
-    llama_index = index
-    # Save new hash
-    with open(ADMIN_DOC_HASH_PATH, 'w') as f:
-        f.write(admin_doc_hash)
-else:
-    llama_index = None
-
-#load or reload index from storage
-def get_llama_index():
-    global llama_index
-    if llama_index is not None:
-        return llama_index
-    if os.path.exists(llama_index_storage_dir):
-        storage_context = StorageContext.from_defaults(persist_dir=llama_index_storage_dir)
-        llama_index = load_index_from_storage(storage_context, embed_model=embed_model)
-        return llama_index
-    return None
-
-# --- File Upload Endpoint ---
-from werkzeug.utils import secure_filename
-ALLOWED_EXTENSIONS = {'pdf', 'docx', 'txt', 'png', 'jpg', 'jpeg'}
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-UPLOAD_DIR = 'uploaded_docs'
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-@app.route('/api/upload', methods=['POST'])
-def upload_file():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        save_path = os.path.join(UPLOAD_DIR, filename)
-        file.save(save_path)
-        # Rebuild index from admin doc + all uploaded docs using SimpleDirectoryReader
-        all_docs = []
-        if os.path.exists(ADMIN_DOC_PATH):
-            all_docs.extend(DocxReader().load_data(ADMIN_DOC_PATH))
-        if os.listdir(UPLOAD_DIR):
-            all_docs.extend(SimpleDirectoryReader(UPLOAD_DIR).load_data())
-        global llama_index
-        llama_index = VectorStoreIndex.from_documents(all_docs, embed_model=embed_model)
-        llama_index.storage_context.persist(persist_dir=llama_index_storage_dir)
-        return jsonify({'success': True, 'filename': filename})
-    return jsonify({'error': 'File type not allowed'}), 400
-
-# --- LlamaIndex Q&A Endpoint ---
-@app.route('/api/llama_query', methods=['POST'])
-def llama_query():
-    data = request.json
-    question = data.get('question', '')
-    if not question:
-        return jsonify({'error': 'No question provided'}), 400
-    index = get_llama_index()
-    if not index:
-        return jsonify({'error': 'No documents indexed yet'}), 400
-    # Ensure Ollama client uses the correct base_url (strip /api/chat if present)
-    ollama_base_url = OLLAMA_API_URL.replace('/api/chat', '')
-    
-    llm = Ollama(
-        model='gemma3:1b',
-        base_url=ollama_base_url,
-        request_timeout=300.0,
-        context_window=2048
-    )
-    chat_engine = index.as_chat_engine(llm=llm, embed_model=embed_model, chat_mode="react")
-    answer = chat_engine.chat(question)
-    return jsonify({'answer': str(answer)})
-
+        from rewrite import rewrite_to_compliant
+    except ImportError:
+        def rewrite_to_compliant(a, b, c, d):
+            return a
+    if contains_forbidden_phrase(answer, user_lang):
+        rewritten = rewrite_to_compliant(answer, user_message, user_lang, fallback_message)
+        if not rewritten or rewritten == answer:
+            answer = fallback_message
+        else:
+            answer = rewritten
+    processed_answer = str(answer)
+    chat_history.append({"role": "assistant", "content": processed_answer})
+    # Keep only the last 5 messages (excluding system prompt)
+    system_msgs = [msg for msg in chat_history if msg['role'] == 'system']
+    non_system_msgs = [msg for msg in chat_history if msg['role'] != 'system']
+    chat_history = system_msgs + non_system_msgs[-5:]
+    session['chat_history'] = chat_history
+    with open('last_prompt.json', 'w', encoding='utf-8') as f:
+        json.dump({
+            'timestamp': __import__('datetime').datetime.now().isoformat(),
+            'chat_history': chat_history,
+            'user_message': user_message,
+            'original_ai_response': answer_original,
+            'postprocessed_response': processed_answer
+        }, f, ensure_ascii=False, indent=2)
+    return jsonify({'message': str(answer)})
+# ...existing code...
 if __name__ == '__main__':
     app.run(debug=True)
