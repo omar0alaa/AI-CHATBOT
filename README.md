@@ -1,19 +1,13 @@
-# AI Chatbot with Python, LlamaIndex, and Ollama
+# AI Chatbot with Python, SQLite Knowledge Base, and Ollama
 
-A web-based AI chatbot built with Python Flask and Ollama for local LLM inference.
-
-![image](https://github.com/user-attachments/assets/7d2b274e-5deb-4485-a039-927d001c111d)
+A web-based AI chatbot built with Python Flask and Ollama for local LLM inference, powered by a SQLite knowledge base.
 
 ## Features
 
 - Web interface for chatting with the AI (bilingual: English/Arabic, with language switcher)
 - Backend API built with Flask
 - Integration with Ollama for local LLM inference (no cloud, no API keys)
-- Uses LlamaIndex for document Q&A over admin and user-uploaded files
-- Local HuggingFace embeddings (BAAI/bge-small-en-v1.5)
-- File upload: users can upload PDF, DOCX, TXT, and image files for Q&A
-- Admin document is always loaded as the base knowledge
-- Uploaded files are deleted after each answer (admin doc is never deleted)
+- Uses a SQLite database (`youlearnt_bank.db`) as the knowledge base for all answers
 - Professional support agent persona, always answers in the website's selected language
 - All answers formatted with clear paragraphs, bullet points, and bold for key terms
 - Responsive, modern UI with dark mode and RTL support for Arabic
@@ -22,7 +16,7 @@ A web-based AI chatbot built with Python Flask and Ollama for local LLM inferenc
 ## Prerequisites
 
 1. Install [Ollama](https://ollama.com/) on your computer or server
-2. Download a language model through Ollama (e.g., llama3, gemma3:4b, etc.)
+2. Download a language model through Ollama (e.g., gemma3:4b, gemma3:1b, phi3:mini, etc.)
 3. Start the Ollama server
 
 ## Ollama Setup
@@ -30,9 +24,9 @@ A web-based AI chatbot built with Python Flask and Ollama for local LLM inferenc
 1. Download and install Ollama from [ollama.com](https://ollama.com/)
 2. Open a terminal and run:
    ```
-   ollama run gemma3:4b
+   ollama run gemma3:1b
    ```
-   Or replace `gemma3:4b` with your preferred model.
+   Or replace `gemma3:1b` with your preferred model.
 3. The server should be running on http://localhost:11434 by default
 
 ## Chatbot Setup
@@ -59,8 +53,8 @@ A web-based AI chatbot built with Python Flask and Ollama for local LLM inferenc
 
 4. (Optional) Create a `.env` file to customize the Ollama API endpoint or model:
    ```
-   OLLAMA_API_URL=http://localhost:11434/api/chat
-   OLLAMA_MODEL=gemma3:4b
+   OLLAMA_API_URL=http://localhost:11434/api/generate
+   OLLAMA_MODEL=gemma3:1b
    ```
 
 5. Run the application:
@@ -72,37 +66,29 @@ A web-based AI chatbot built with Python Flask and Ollama for local LLM inferenc
 
 ## Usage Notes
 
-- The admin document is always loaded and forms the base knowledge for the AI.
-- When a user uploads files, the index is rebuilt to include both the admin doc and all uploaded files.
-- After each answer, all user-uploaded files are deleted automatically (admin doc is never deleted).
+- The SQLite database (`youlearnt_bank.db`) is the only source of knowledge for the AI. All answers are generated using the most relevant entries from this database.
+- If the user's question does not match any database entry, the AI will respond with a friendly greeting for greetings/help requests, or with a fallback message for unknown questions.
 - The AI always answers in the website's selected language (English or Arabic), regardless of the question's language.
 - All answers are formatted for clarity and professionalism.
 
 ## Project Structure
 
-- `app.py`: Main Flask application (backend, LlamaIndex/Ollama integration, endpoints)
+- `app.py`: Main Flask application (backend, SQLite/Ollama integration, endpoints)
+- `persona.py`: Persona logic for professional support agent
+- `postprocess.py`: Post-processing filter for forbidden phrases
 - `templates/index.html`: Main chat interface (bilingual UI, file upload, language switcher)
 - `static/js/chat.js`: Chat logic, markdown rendering
 - `static/js/upload.js`: File upload logic
-- `uploaded_docs/`: Directory for user-uploaded files (auto-cleaned after each answer)
-- `llamaindex_storage/`: Persistent storage for LlamaIndex
+- `youlearnt_bank.db`: SQLite knowledge base
 - `requirements.txt`: Project dependencies
 
-## TO DO 
-1. Implement Chat History backend database
-2. Change backend to send AI Description only at the start of conversation ✅
-3. Add Custom API for chatting and test with Postman
-4. Enhance the reply speed 
-5. Enhance the reply formatting ✅
-6. Use better persona description ✅
-7. Better Token usage efficiency ✅
-8. implement better session handling (for each user) ✅
-9. implement File handling ✅
-10. better prompt refactoring ✅
-11. read whole file before answering ✅
-12. Add post-processing filter
-
-# content on the database question
+## TO DO
+- Enhance reply speed
+- Enhance reply formatting
+- Use better persona description
+- Better token usage efficiency
+- Implement better session handling (for each user)
+- Add post-processing filter
 
 ## Deployment
 
@@ -114,7 +100,7 @@ This application is designed to work with a local Ollama server. For production 
    - Make sure Ollama is running and your model is loaded:
      ```
      ollama serve &
-     ollama run gemma3:4b &
+     ollama run gemma3:1b &
      ```
    - You may want to use a process manager (like `systemd` or `pm2`) to keep Ollama running.
 

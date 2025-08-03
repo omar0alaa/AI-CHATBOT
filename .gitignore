@@ -48,3 +48,7 @@ ENV/
 # OS specific
 .DS_Store
 Thumbs.db 
+
+#DB CHatbot
+create_sqllite.py
+YouLearnt_Final.docx
