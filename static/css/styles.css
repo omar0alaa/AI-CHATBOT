@@ -257,10 +257,10 @@ body {
 
 /* Theme Toggle Button */
 .theme-toggle {
-    position: absolute;
-    right: 20px;
-    top: 50%;
-    transform: translateY(-50%);
+    position: relative;
+    right: unset;
+    top: unset;
+    transform: none;
     background: none;
     border: none;
     color: white;
@@ -282,10 +282,10 @@ body {
 
 /* lang Toggle Button */
 .lang-toggle {
-    position: absolute;
-    right: 60px;
-    top: 50%;
-    transform: translateY(-50%);
+    position: relative;
+    right: unset;
+    top: unset;
+    transform: none;
     background: none;
     border: none;
     color: white;

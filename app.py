@@ -36,7 +36,59 @@ def index():
 def widget():
     return render_template('widget.html')
 
+
 DB_PATH = 'youlearnt_bank.db'
+
+# --- Admin API endpoints for DB CRUD ---
+@app.route('/admin/db')
+def admin_db_page():
+    return render_template('admin_db.html')
+
+@app.route('/admin/api/qa', methods=['GET'])
+def admin_get_qa():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT ID, question, answer FROM youlearnt_bank ORDER BY ID ASC')
+    rows = [dict(ID=row[0], question=row[1], answer=row[2]) for row in c.fetchall()]
+    conn.close()
+    return jsonify(rows)
+
+@app.route('/admin/api/qa', methods=['POST'])
+def admin_add_qa():
+    data = request.get_json()
+    question = data.get('question', '').strip()
+    answer = data.get('answer', '').strip()
+    if not question or not answer:
+        return jsonify({'error': 'Missing question or answer'}), 400
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('INSERT INTO youlearnt_bank (question, answer) VALUES (?, ?)', (question, answer))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+@app.route('/admin/api/qa/<int:qa_id>', methods=['PUT'])
+def admin_update_qa(qa_id):
+    data = request.get_json()
+    question = data.get('question', '').strip()
+    answer = data.get('answer', '').strip()
+    if not question or not answer:
+        return jsonify({'error': 'Missing question or answer'}), 400
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('UPDATE youlearnt_bank SET question = ?, answer = ? WHERE ID = ?', (question, answer, qa_id))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+@app.route('/admin/api/qa/<int:qa_id>', methods=['DELETE'])
+def admin_delete_qa(qa_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('DELETE FROM youlearnt_bank WHERE ID = ?', (qa_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
@@ -108,14 +160,8 @@ def chat():
     if not contexts:
         print(f"[DB] No relevant contexts found for: {user_message}")
         # Persona-only prompt, no knowledge base
-        prompt = (
-            f"{lang_instruction}\n\nUser Question: {user_message}\n\n"
-            "Instructions:\n"
-            "- If the user is greeting (e.g. 'hi', 'hello', 'good morning', 'can you help me', 'I need help'), respond with a friendly greeting and offer assistance (e.g. 'Hello! How can I help you today?').\n"
-            "- If the user asks a question and you do not know the answer, reply with: 'Please rephrase your question or contact our customer support.'\n"
-            "- Do not make up information.\n"
-            "- Always answer as a professional support agent."
-        )
+        from persona import get_persona_fallback_prompt
+        prompt = get_persona_fallback_prompt(user_lang, user_message)
     else:
         # Build context string for Ollama
         context_str = "\n".join([f"- {c}" for c in contexts])
