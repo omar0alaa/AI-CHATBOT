@@ -172,12 +172,12 @@ def chat():
         "stream": False
     }
     try:
-        resp = requests.post(ollama_url, json=payload, timeout=60)
+        resp = requests.post(ollama_url, json=payload, timeout=120)
         resp.raise_for_status()
         result = resp.json()
         answer = result.get("response", fallback_message)
     except Exception as e:
-        answer = fallback_message
+        answer = f"Error:\n{e}\n"
 
     # Post-processing filter for forbidden phrases
     answer_original = answer
@@ -208,6 +208,6 @@ def chat():
             'postprocessed_response': processed_answer
         }, f, ensure_ascii=False, indent=2)
     return jsonify({'message': str(answer)})
-# ...existing code...
+
 if __name__ == '__main__':
     app.run(debug=True)
