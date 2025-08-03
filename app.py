@@ -1,5 +1,4 @@
 import time
-
 from flask import Flask, request, jsonify, render_template, session
 import requests
 import os
@@ -50,7 +49,7 @@ app.config['SESSION_PERMANENT'] = False
 Session(app)
 
 # OLLAMA API endpoint (default for local server)
-OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://161.97.147.7:11434/api/chat")
+OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://localhost:11434/api/chat")
 
 # Dummy endpoint to test Flask timeout behavior
 @app.route('/api/dummy_wait', methods=['GET'])
@@ -122,8 +121,7 @@ def chat():
         model='gemma3:1b',
         system_prompt=lang_instruction,
         base_url=ollama_base_url,
-        request_timeout=300.0,
-        context_window=2048
+        request_timeout=300.0
     )
     query_engine = index.as_query_engine(llm=llm, embed_model=embed_model)
     fallback_message = get_fallback_message(user_lang)
@@ -146,6 +144,7 @@ def chat():
             original_answer = str(answer)
             # Post-processing filter for forbidden phrases
             if contains_forbidden_phrase(original_answer, user_lang):
+                print(f"[FILTER] Checking for forbidden phrases in AI response")
                 rewritten = rewrite_to_compliant(original_answer, user_message, user_lang, fallback_message)
                 if not rewritten or rewritten == original_answer:
                     answer = fallback_message
@@ -199,7 +198,7 @@ llama_index_storage_dir = './llamaindex_storage'
 ADMIN_DOC_HASH_PATH = './admin_doc.hash'
 
 # Use a local HuggingFace embedding model
-embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
+embed_model = HuggingFaceEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2", device="cpu")
 
 admin_doc_hash = None
 if os.path.exists(ADMIN_DOC_PATH):
@@ -294,8 +293,8 @@ def llama_query():
         request_timeout=300.0,
         context_window=2048
     )
-    query_engine = index.as_query_engine(llm=llm, embed_model=embed_model)
-    answer = query_engine.query(question)
+    chat_engine = index.as_chat_engine(llm=llm, embed_model=embed_model, chat_mode="react")
+    answer = chat_engine.chat(question)
     return jsonify({'answer': str(answer)})
 
 if __name__ == '__main__':

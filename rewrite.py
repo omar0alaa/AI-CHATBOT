@@ -8,6 +8,7 @@ REWRITE_MODEL = "google/flan-t5-base"
 rewrite_pipe = pipeline("text2text-generation", model=REWRITE_MODEL)
 
 def rewrite_to_compliant(answer: str, user_question: str, lang: str, fallback_message: str) -> str:
+    print(f"[REWRITE] Started")
     if lang == 'ar':
         prompt = (
             f"سؤال المستخدم: {user_question}\nالإجابة: {answer}\n"
@@ -36,4 +37,5 @@ def rewrite_to_compliant(answer: str, user_question: str, lang: str, fallback_me
         #Debugging output
         print(f"[REWRITE] Similarity detected, returning fallback message")
         return fallback_message
+    print(f"[REWRITE] Message rewritten successfully")
     return rewritten
