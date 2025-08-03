@@ -44,8 +44,8 @@ DB_PATH = 'youlearnt_bank.db'
 def admin_db_page():
     return render_template('admin_db.html')
 
-@app.route('/admin/api/qa', methods=['GET'])
-def admin_get_qa():
+@app.route('/admin/api/bank', methods=['GET'])
+def admin_get_bank():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('SELECT ID, question, answer FROM youlearnt_bank ORDER BY ID ASC')
@@ -53,8 +53,8 @@ def admin_get_qa():
     conn.close()
     return jsonify(rows)
 
-@app.route('/admin/api/qa', methods=['POST'])
-def admin_add_qa():
+@app.route('/admin/api/bank', methods=['POST'])
+def admin_add_bank():
     data = request.get_json()
     question = data.get('question', '').strip()
     answer = data.get('answer', '').strip()
@@ -67,8 +67,8 @@ def admin_add_qa():
     conn.close()
     return jsonify({'success': True})
 
-@app.route('/admin/api/qa/<int:qa_id>', methods=['PUT'])
-def admin_update_qa(qa_id):
+@app.route('/admin/api/bank/edit/<int:qa_id>', methods=['PUT'])
+def admin_edit_bank(qa_id):
     data = request.get_json()
     question = data.get('question', '').strip()
     answer = data.get('answer', '').strip()
@@ -81,8 +81,8 @@ def admin_update_qa(qa_id):
     conn.close()
     return jsonify({'success': True})
 
-@app.route('/admin/api/qa/<int:qa_id>', methods=['DELETE'])
-def admin_delete_qa(qa_id):
+@app.route('/admin/api/bank/delete/<int:qa_id>', methods=['DELETE'])
+def admin_delete_bank(qa_id):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('DELETE FROM youlearnt_bank WHERE ID = ?', (qa_id,))

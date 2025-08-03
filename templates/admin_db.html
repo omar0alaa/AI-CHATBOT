@@ -157,7 +157,7 @@
     });
     // Q&A logic
     function fetchQA() {
-        fetch('/admin/api/qa')
+        fetch('/admin/api/bank')
             .then(res => res.json())
             .then(data => {
                 const tbody = document.querySelector('#qa-table tbody');
@@ -181,7 +181,7 @@
     document.getElementById('add-form-modal').onsubmit = function(e) {
         e.preventDefault();
         const form = e.target;
-        fetch('/admin/api/qa', {
+        fetch('/admin/api/bank', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -219,7 +219,7 @@
     // Edit modal form submit
     document.getElementById('edit-form-modal').onsubmit = function(e) {
         e.preventDefault();
-        fetch(`/admin/api/qa/${window.editId}`, {
+        fetch(`/admin/api/bank/edit/${window.editId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -235,7 +235,7 @@
 
     // Delete modal confirm
     document.getElementById('confirm-delete-btn').onclick = function() {
-        fetch(`/admin/api/qa/${window.deleteId}`, { method: 'DELETE' })
+        fetch(`/admin/api/bank/delete/${window.deleteId}`, { method: 'DELETE' })
             .then(() => {
                 fetchQA();
                 var deleteModal = bootstrap.Modal.getInstance(document.getElementById('deleteModal'));
