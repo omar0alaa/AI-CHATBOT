@@ -66,8 +66,10 @@
                         <thead class="table-light">
                             <tr>
                                 <th style="width:40px;">ID</th>
-                                <th style="min-width:120px;">Question</th>
-                                <th style="min-width:180px;">Answer</th>
+                                <th style="min-width:150px;">Question (EN)</th>
+                                <th style="min-width:150px;">Question (AR)</th>
+                                <th style="min-width:180px;">Answer (EN)</th>
+                                <th style="min-width:180px;">Answer (AR)</th>
                                 <th style="width:120px;">Actions</th>
                             </tr>
                         </thead>
@@ -88,8 +90,10 @@
                 </div>
                 <form id="edit-form-modal">
                     <div class="modal-body d-flex flex-column gap-3">
-                        <input type="text" name="question" id="edit-question" class="form-control" placeholder="Question" required>
-                        <textarea name="answer" id="edit-answer" class="form-control" placeholder="Answer" required style="min-height:60px;"></textarea>
+                        <input type="text" name="question_EN" id="edit-question-en" class="form-control" placeholder="Question (English)" required>
+                        <input type="text" name="question_AR" id="edit-question-ar" class="form-control" placeholder="Question (Arabic)" required dir="rtl">
+                        <textarea name="answer_EN" id="edit-answer-en" class="form-control" placeholder="Answer (English)" required style="min-height:60px;"></textarea>
+                        <textarea name="answer_AR" id="edit-answer-ar" class="form-control" placeholder="Answer (Arabic)" required style="min-height:60px;" dir="rtl"></textarea>
                     </div>
                     <div class="modal-footer">
                         <button type="submit" class="btn btn-primary">Save Changes</button>
@@ -126,8 +130,10 @@
                 </div>
                 <form id="add-form-modal">
                     <div class="modal-body d-flex flex-column gap-3">
-                        <input type="text" name="question" class="form-control" placeholder="Question" required>
-                        <textarea name="answer" class="form-control" placeholder="Answer" required style="min-height:60px;"></textarea>
+                        <input type="text" name="question_EN" class="form-control" placeholder="Question (English)" required>
+                        <input type="text" name="question_AR" class="form-control" placeholder="Question (Arabic)" required dir="rtl">
+                        <textarea name="answer_EN" class="form-control" placeholder="Answer (English)" required style="min-height:60px;"></textarea>
+                        <textarea name="answer_AR" class="form-control" placeholder="Answer (Arabic)" required style="min-height:60px;" dir="rtl"></textarea>
                     </div>
                     <div class="modal-footer">
                         <button type="submit" class="btn btn-primary">Add Q&A</button>
@@ -166,8 +172,10 @@
                     tbody.innerHTML += `
                     <tr data-id="${row.ID}">
                         <td>${row.ID}</td>
-                        <td><span class="question">${row.question}</span></td>
-                        <td><span class="answer">${row.answer}</span></td>
+                        <td><span class="question-en">${row.question_EN}</span></td>
+                        <td><span class="question-ar" dir="rtl">${row.question_AR}</span></td>
+                        <td><span class="answer-en">${row.answer_EN}</span></td>
+                        <td><span class="answer-ar" dir="rtl">${row.answer_AR}</span></td>
                         <td class="actions">
                             <button class="edit btn btn-warning btn-sm me-1">Edit</button>
                             <button class="delete btn btn-danger btn-sm">Delete</button>
@@ -185,8 +193,10 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                question: form.question.value,
-                answer: form.answer.value
+                question_EN: form.question_EN.value,
+                question_AR: form.question_AR.value,
+                answer_EN: form.answer_EN.value,
+                answer_AR: form.answer_AR.value
             })
         }).then(() => {
             form.reset();
@@ -207,10 +217,14 @@
         if (e.target.classList.contains('edit')) {
             // Show edit modal and fill values
             window.editId = id;
-            const q = tr.querySelector('.question').textContent;
-            const a = tr.querySelector('.answer').textContent;
-            document.getElementById('edit-question').value = q;
-            document.getElementById('edit-answer').value = a;
+            const q_en = tr.querySelector('.question-en').textContent;
+            const q_ar = tr.querySelector('.question-ar').textContent;
+            const a_en = tr.querySelector('.answer-en').textContent;
+            const a_ar = tr.querySelector('.answer-ar').textContent;
+            document.getElementById('edit-question-en').value = q_en;
+            document.getElementById('edit-question-ar').value = q_ar;
+            document.getElementById('edit-answer-en').value = a_en;
+            document.getElementById('edit-answer-ar').value = a_ar;
             var editModal = new bootstrap.Modal(document.getElementById('editModal'));
             editModal.show();
         }
@@ -223,8 +237,10 @@
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                question: document.getElementById('edit-question').value,
-                answer: document.getElementById('edit-answer').value
+                question_EN: document.getElementById('edit-question-en').value,
+                question_AR: document.getElementById('edit-question-ar').value,
+                answer_EN: document.getElementById('edit-answer-en').value,
+                answer_AR: document.getElementById('edit-answer-ar').value
             })
         }).then(() => {
             fetchQA();

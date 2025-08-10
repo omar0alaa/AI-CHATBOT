@@ -48,21 +48,24 @@ def admin_db_page():
 def admin_get_bank():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('SELECT ID, question, answer FROM youlearnt_bank ORDER BY ID ASC')
-    rows = [dict(ID=row[0], question=row[1], answer=row[2]) for row in c.fetchall()]
+    c.execute('SELECT ID, question_EN, question_AR, answer_EN, answer_AR, created_date FROM youlearnt_bank ORDER BY ID ASC')
+    rows = [dict(ID=row[0], question_EN=row[1], question_AR=row[2], answer_EN=row[3], answer_AR=row[4], created_date=row[5]) for row in c.fetchall()]
     conn.close()
     return jsonify(rows)
 
 @app.route('/admin/api/bank', methods=['POST'])
 def admin_add_bank():
     data = request.get_json()
-    question = data.get('question', '').strip()
-    answer = data.get('answer', '').strip()
-    if not question or not answer:
-        return jsonify({'error': 'Missing question or answer'}), 400
+    question_en = data.get('question_EN', '').strip()
+    question_ar = data.get('question_AR', '').strip()
+    answer_en = data.get('answer_EN', '').strip()
+    answer_ar = data.get('answer_AR', '').strip()
+    if not question_en or not question_ar or not answer_en or not answer_ar:
+        return jsonify({'error': 'Missing required fields (question_EN, question_AR, answer_EN, answer_AR)'}), 400
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('INSERT INTO youlearnt_bank (question, answer) VALUES (?, ?)', (question, answer))
+    c.execute('INSERT INTO youlearnt_bank (question_EN, question_AR, answer_EN, answer_AR) VALUES (?, ?, ?, ?)', 
+              (question_en, question_ar, answer_en, answer_ar))
     conn.commit()
     conn.close()
     return jsonify({'success': True})
@@ -70,13 +73,16 @@ def admin_add_bank():
 @app.route('/admin/api/bank/edit/<int:qa_id>', methods=['PUT'])
 def admin_edit_bank(qa_id):
     data = request.get_json()
-    question = data.get('question', '').strip()
-    answer = data.get('answer', '').strip()
-    if not question or not answer:
-        return jsonify({'error': 'Missing question or answer'}), 400
+    question_en = data.get('question_EN', '').strip()
+    question_ar = data.get('question_AR', '').strip()
+    answer_en = data.get('answer_EN', '').strip()
+    answer_ar = data.get('answer_AR', '').strip()
+    if not question_en or not question_ar or not answer_en or not answer_ar:
+        return jsonify({'error': 'Missing required fields (question_EN, question_AR, answer_EN, answer_AR)'}), 400
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('UPDATE youlearnt_bank SET question = ?, answer = ? WHERE ID = ?', (question, answer, qa_id))
+    c.execute('UPDATE youlearnt_bank SET question_EN = ?, question_AR = ?, answer_EN = ?, answer_AR = ? WHERE ID = ?', 
+              (question_en, question_ar, answer_en, answer_ar, qa_id))
     conn.commit()
     conn.close()
     return jsonify({'success': True})
@@ -95,25 +101,36 @@ def init_db():
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS youlearnt_bank (
         ID INTEGER PRIMARY KEY AUTOINCREMENT,
-        question TEXT NOT NULL,
-        answer TEXT NOT NULL
+        question_EN TEXT NOT NULL,
+        question_AR TEXT NOT NULL,
+        answer_EN TEXT NOT NULL,
+        answer_AR TEXT NOT NULL,
+        created_date TEXT DEFAULT CURRENT_TIMESTAMP
     )''')
     conn.commit()
     conn.close()
 
 init_db()
 
-def get_answer_from_db(user_message):
+def get_answer_from_db(user_message, user_lang='en'):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('SELECT question, answer FROM youlearnt_bank')
+    c.execute('SELECT question_EN, question_AR, answer_EN, answer_AR FROM youlearnt_bank')
     rows = c.fetchall()
     conn.close()
+    
     # Find top 3 most similar Q&A pairs
     scored = []
-    for q, a in rows:
-        score = SequenceMatcher(None, user_message.lower(), q.lower()).ratio()
-        scored.append((score, q, a))
+    for q_en, q_ar, a_en, a_ar in rows:
+        # Compare with both English and Arabic questions
+        score_en = SequenceMatcher(None, user_message.lower(), q_en.lower()).ratio()
+        score_ar = SequenceMatcher(None, user_message.lower(), q_ar.lower()).ratio()
+        # Use the higher score
+        score = max(score_en, score_ar)
+        # Return answer in user's language
+        answer = a_ar if user_lang == 'ar' else a_en
+        scored.append((score, q_en, answer))
+    
     scored.sort(reverse=True)
     # Return top 3 answers above threshold
     top_contexts = [a for s, q, a in scored[:3] if s >= 0.5]
@@ -151,12 +168,14 @@ def chat():
     chat_history.append({"role": "user", "content": user_message})
     session['chat_history'] = chat_history
 
-    # --- Knowledge base retrieval ---
-    contexts = get_answer_from_db(user_message)
-    fallback_message = get_fallback_message(user_lang)
-
+    # Ollama configuration
     ollama_url = os.getenv("OLLAMA_API_URL", "http://localhost:11434/api/generate")
     model_name = os.getenv("OLLAMA_MODEL", "gemma3:1b")
+
+    # --- Knowledge base retrieval ---
+    contexts = get_answer_from_db(user_message, user_lang)
+    fallback_message = get_fallback_message(user_lang)
+
     if not contexts:
         print(f"[DB] No relevant contexts found for: {user_message}")
         # Persona-only prompt, no knowledge base
@@ -194,6 +213,7 @@ def chat():
             answer = rewritten
     processed_answer = str(answer)
     chat_history.append({"role": "assistant", "content": processed_answer})
+    
     # Keep only the last 5 messages (excluding system prompt)
     system_msgs = [msg for msg in chat_history if msg['role'] == 'system']
     non_system_msgs = [msg for msg in chat_history if msg['role'] != 'system']

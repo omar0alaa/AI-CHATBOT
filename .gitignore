@@ -51,4 +51,5 @@ Thumbs.db
 
 #DB CHatbot
 create_sqllite.py
+create_bilingual_db.py
 YouLearnt_Final.docx
