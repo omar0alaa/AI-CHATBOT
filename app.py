@@ -36,6 +36,23 @@ def index():
 def widget():
     return render_template('widget.html')
 
+@app.route('/admin/debug/toggle', methods=['POST'])
+def toggle_debug():
+    """Toggle debug mode for showing detailed error info in chat"""
+    current_debug = os.environ.get("SHOW_DEBUG", "false").lower() == "true"
+    new_debug = not current_debug
+    os.environ["SHOW_DEBUG"] = "true" if new_debug else "false"
+    return jsonify({
+        'debug_enabled': new_debug,
+        'message': f"Debug mode {'enabled' if new_debug else 'disabled'}"
+    })
+
+@app.route('/admin/debug/status', methods=['GET'])
+def debug_status():
+    """Get current debug status"""
+    current_debug = os.environ.get("SHOW_DEBUG", "false").lower() == "true"
+    return jsonify({'debug_enabled': current_debug})
+
 
 DB_PATH = 'youlearnt_bank.db'
 
@@ -146,6 +163,11 @@ def chat():
     print(f"[DEBUG] Received message: {user_message}")
     print(f"[DEBUG] UI Language: {ui_lang}")
     
+    # Initialize debug info that will be sent to frontend
+    debug_info = []
+    debug_info.append(f"🔍 Processing message: {user_message}")
+    debug_info.append(f"🌐 UI Language: {ui_lang}")
+    
     if not user_message:
         return jsonify({'error': 'No message provided'}), 400
 
@@ -158,11 +180,14 @@ def chat():
         try:
             user_lang = detect(user_message)
             print(f"[DEBUG] Auto-detected language: {user_lang}")
+            debug_info.append(f"🔤 Auto-detected language: {user_lang}")
         except Exception as e:
             print(f"[ERROR] Language detection failed: {e}")
+            debug_info.append(f"❌ Language detection failed: {e}")
             user_lang = 'en'
     
     print(f"[DEBUG] Final language: {user_lang}")
+    debug_info.append(f"✅ Final language: {user_lang}")
     lang_instruction = get_persona_prompt(user_lang)
     if user_lang == 'ar':
         user_message = user_message
@@ -183,29 +208,37 @@ def chat():
     
     print(f"[DEBUG] Ollama URL: {ollama_url}")
     print(f"[DEBUG] Model: {model_name}")
+    debug_info.append(f"🤖 Ollama URL: {ollama_url}")
+    debug_info.append(f"📦 Model: {model_name}")
 
     # --- Knowledge base retrieval ---
     try:
         contexts = get_answer_from_db(user_message, user_lang)
         print(f"[DEBUG] Found {len(contexts)} contexts from DB")
+        debug_info.append(f"📚 Found {len(contexts)} contexts from database")
         if contexts:
             for i, ctx in enumerate(contexts):
                 print(f"[DEBUG] Context {i+1}: {ctx[:100]}...")
+                debug_info.append(f"📄 Context {i+1}: {ctx[:100]}...")
         else:
             print(f"[DEBUG] No relevant contexts found for message: {user_message}")
+            debug_info.append(f"❌ No relevant contexts found in database")
     except Exception as e:
         print(f"[ERROR] Database query failed: {e}")
+        debug_info.append(f"❌ Database query failed: {e}")
         contexts = []
     
     fallback_message = get_fallback_message(user_lang)
 
     if not contexts:
         print(f"[DEBUG] Using persona fallback prompt")
+        debug_info.append(f"🎭 Using persona fallback prompt (no database match)")
         # Persona-only prompt, no knowledge base
         from persona import get_persona_fallback_prompt
         prompt = get_persona_fallback_prompt(user_lang, user_message)
     else:
         print(f"[DEBUG] Using knowledge base prompt with {len(contexts)} contexts")
+        debug_info.append(f"📖 Using knowledge base prompt with {len(contexts)} contexts")
         # Build context string for Ollama
         context_str = "\n".join([f"- {c}" for c in contexts])
         prompt = f"{lang_instruction}\n\nKnowledge Base:\n{context_str}\n\nUser Question: {user_message}\n\nAnswer strictly using the above knowledge base."
@@ -219,6 +252,8 @@ def chat():
     print(f"[DEBUG] Sending request to Ollama at {ollama_url}...")
     print(f"[DEBUG] Payload model: {payload['model']}")
     print(f"[DEBUG] Prompt length: {len(payload['prompt'])} characters")
+    debug_info.append(f"🚀 Sending request to Ollama...")
+    debug_info.append(f"📝 Prompt length: {len(payload['prompt'])} characters")
     
     answer_original = fallback_message
     
@@ -230,9 +265,12 @@ def chat():
         try:
             test_resp = requests.get(ollama_url.replace('/api/generate', '/api/tags'), timeout=5)
             print(f"[DEBUG] Ollama connectivity test status: {test_resp.status_code}")
+            debug_info.append(f"🔗 Ollama connectivity test: {test_resp.status_code}")
         except Exception as conn_e:
             print(f"[ERROR] Ollama connectivity test failed: {conn_e}")
             print(f"[ERROR] Make sure Ollama is running and accessible at {ollama_url}")
+            debug_info.append(f"❌ Ollama connectivity test failed: {conn_e}")
+            debug_info.append(f"💡 Make sure Ollama is running: ollama serve")
             answer = fallback_message
             raise Exception(f"Ollama not accessible: {conn_e}")
         
@@ -241,75 +279,103 @@ def chat():
         
         print(f"[DEBUG] Response time: {end_time - start_time:.2f} seconds")
         print(f"[DEBUG] Response status: {resp.status_code}")
+        debug_info.append(f"⏱️ Response time: {end_time - start_time:.2f} seconds")
+        debug_info.append(f"📊 Response status: {resp.status_code}")
         
         if resp.status_code != 200:
             print(f"[ERROR] Ollama returned status {resp.status_code}")
             print(f"[ERROR] Response text: {resp.text}")
+            debug_info.append(f"❌ Ollama error {resp.status_code}: {resp.text}")
             answer = fallback_message
         else:
             try:
                 result = resp.json()
                 print(f"[DEBUG] Response keys: {list(result.keys())}")
+                debug_info.append(f"🔑 Response keys: {list(result.keys())}")
                 
                 raw_response = result.get("response", "")
                 if not raw_response or raw_response.strip() == "":
                     print(f"[ERROR] Empty response from Ollama")
+                    debug_info.append(f"❌ Empty response from Ollama")
                     answer = fallback_message
                 else:
                     answer = raw_response
                     answer_original = answer
                     print(f"[DEBUG] Got valid response from Ollama ({len(answer)} chars)")
                     print(f"[DEBUG] Response preview: {answer[:200]}...")
+                    debug_info.append(f"✅ Got valid response ({len(answer)} chars)")
                     
             except json.JSONDecodeError as json_e:
                 print(f"[ERROR] Failed to parse Ollama JSON response: {json_e}")
                 print(f"[ERROR] Raw response: {resp.text}")
+                debug_info.append(f"❌ JSON parse error: {json_e}")
+                debug_info.append(f"📄 Raw response: {resp.text}")
                 answer = fallback_message
                 
     except requests.exceptions.Timeout:
         print(f"[ERROR] Ollama request timed out after 120 seconds")
+        debug_info.append(f"⏰ Ollama request timed out after 120 seconds")
         answer = fallback_message
     except requests.exceptions.ConnectionError as e:
         print(f"[ERROR] Cannot connect to Ollama at {ollama_url}")
         print(f"[ERROR] Connection error details: {e}")
         print(f"[ERROR] Is Ollama running? Try: ollama serve")
+        debug_info.append(f"❌ Cannot connect to Ollama: {e}")
+        debug_info.append(f"💡 Is Ollama running? Try: ollama serve")
         answer = fallback_message
     except requests.exceptions.RequestException as e:
         print(f"[ERROR] Request to Ollama failed: {e}")
+        debug_info.append(f"❌ Request failed: {e}")
         answer = fallback_message
     except Exception as e:
         print(f"[ERROR] Unexpected error calling Ollama: {e}")
+        debug_info.append(f"❌ Unexpected error: {e}")
         answer = fallback_message
 
     # Post-processing filter for forbidden phrases
     print(f"[DEBUG] Starting post-processing...")
+    debug_info.append(f"🔧 Starting post-processing...")
     try:
         from rewrite import rewrite_to_compliant
         print(f"[DEBUG] Rewrite module available")
+        debug_info.append(f"📝 Rewrite module available")
     except ImportError:
         print(f"[DEBUG] Rewrite module not available, using fallback")
+        debug_info.append(f"⚠️ Rewrite module not available")
         def rewrite_to_compliant(a, b, c, d):
             return a
     
     try:
         if contains_forbidden_phrase(answer, user_lang):
             print(f"[DEBUG] Forbidden phrase detected, attempting rewrite...")
+            debug_info.append(f"🚫 Forbidden phrase detected, rewriting...")
             rewritten = rewrite_to_compliant(answer, user_message, user_lang, fallback_message)
             if not rewritten or rewritten == answer:
                 print(f"[DEBUG] Rewrite failed, using fallback message")
+                debug_info.append(f"❌ Rewrite failed, using fallback")
                 answer = fallback_message
             else:
                 print(f"[DEBUG] Rewrite successful")
+                debug_info.append(f"✅ Rewrite successful")
                 answer = rewritten
         else:
             print(f"[DEBUG] No forbidden phrases detected")
+            debug_info.append(f"✅ No forbidden phrases detected")
     except Exception as pp_e:
         print(f"[ERROR] Post-processing failed: {pp_e}")
+        debug_info.append(f"❌ Post-processing failed: {pp_e}")
         # Don't change the answer if post-processing fails
     
     processed_answer = str(answer)
     print(f"[DEBUG] Final answer length: {len(processed_answer)} chars")
     print(f"[DEBUG] Final answer preview: {processed_answer[:200]}...")
+    debug_info.append(f"📏 Final answer: {len(processed_answer)} characters")
+    
+    # Include debug info in development mode
+    show_debug = os.getenv("SHOW_DEBUG", "false").lower() == "true"
+    if show_debug:
+        debug_text = "\n\n🔍 **Debug Info:**\n" + "\n".join(debug_info)
+        processed_answer += debug_text
     
     chat_history.append({"role": "assistant", "content": processed_answer})
     

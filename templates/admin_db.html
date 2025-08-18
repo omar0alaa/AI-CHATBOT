@@ -47,6 +47,9 @@
         <div class="d-flex align-items-center justify-content-between mb-4">
             <h2 class="mb-0" style="font-weight:700; color:var(--primary-color); letter-spacing:1px;"><i class="fas fa-database me-2"></i> Admin <span class="highlight">DB</span> Editor</h2>
             <div class="d-flex align-items-center gap-2">
+                <button id="debug-toggle" class="theme-toggle" title="Toggle Debug Mode" aria-label="Toggle Debug Mode">
+                    <i class="fas fa-bug"></i>
+                </button>
                 <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode">
                     <i class="fas fa-sun"></i>
                 </button>
@@ -161,6 +164,41 @@
     document.getElementById('admin-home-btn').addEventListener('click', function() {
         window.location.href = '/';
     });
+
+    // Debug toggle button
+    document.getElementById('debug-toggle').addEventListener('click', function() {
+        fetch('/admin/debug/toggle', { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                const icon = this.querySelector('i');
+                if (data.debug_enabled) {
+                    icon.className = 'fas fa-bug';
+                    icon.style.color = '#ff6b6b';
+                    this.title = 'Debug Mode ON - Click to disable';
+                } else {
+                    icon.className = 'fas fa-bug';
+                    icon.style.color = '';
+                    this.title = 'Debug Mode OFF - Click to enable';
+                }
+                alert(data.message);
+            });
+    });
+
+    // Check debug status on load
+    fetch('/admin/debug/status')
+        .then(res => res.json())
+        .then(data => {
+            const debugBtn = document.getElementById('debug-toggle');
+            const icon = debugBtn.querySelector('i');
+            if (data.debug_enabled) {
+                icon.style.color = '#ff6b6b';
+                debugBtn.title = 'Debug Mode ON - Click to disable';
+            } else {
+                icon.style.color = '';
+                debugBtn.title = 'Debug Mode OFF - Click to enable';
+            }
+        });
+
     // Q&A logic
     function fetchQA() {
         fetch('/admin/api/bank')
