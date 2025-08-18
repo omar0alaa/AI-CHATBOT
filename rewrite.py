@@ -1,14 +1,12 @@
-from difflib import SequenceMatcher
 from transformers import pipeline
 
 # Rewriting model for generating compliant answers
-REWRITE_MODEL = "google/flan-t5-base"
+REWRITE_MODEL = "google/flan-t5-small"
 
 # Load the pipeline once at startup
 rewrite_pipe = pipeline("text2text-generation", model=REWRITE_MODEL)
 
 def rewrite_to_compliant(answer: str, user_question: str, lang: str, fallback_message: str) -> str:
-    print(f"[REWRITE] Started")
     if lang == 'ar':
         prompt = (
             f"سؤال المستخدم: {user_question}\nالإجابة: {answer}\n"
@@ -23,19 +21,7 @@ def rewrite_to_compliant(answer: str, user_question: str, lang: str, fallback_me
         )
     result = rewrite_pipe(prompt, max_new_tokens=256, do_sample=False)
     rewritten = result[0]['generated_text'].strip()
-    # Normalize for comparison
-    rewritten_norm = rewritten.strip().lower()
-    question_norm = user_question.strip().lower()
-    # If the rewritten answer matches or contains the user question, or is very similar, return fallback
-    if (
-        rewritten_norm == question_norm
-        or question_norm in rewritten_norm
-        or rewritten_norm in question_norm
-        # if the similarity ratio is n% or more return fallback
-        or SequenceMatcher(None, rewritten_norm, question_norm).ratio() > 0.70
-    ):
-        #Debugging output
-        print(f"[REWRITE] Similarity detected, returning fallback message")
+    # If the rewritten answer matches the user question (ignoring case/whitespace), return fallback
+    if rewritten.strip().lower() == user_question.strip().lower():
         return fallback_message
-    print(f"[REWRITE] Message rewritten successfully")
     return rewritten
