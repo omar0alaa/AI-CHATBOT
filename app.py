@@ -141,6 +141,11 @@ def chat():
     data = request.json
     user_message = data.get('message', '')
     ui_lang = data.get('lang')
+    
+    print(f"[DEBUG] ========== NEW CHAT REQUEST ==========")
+    print(f"[DEBUG] Received message: {user_message}")
+    print(f"[DEBUG] UI Language: {ui_lang}")
+    
     if not user_message:
         return jsonify({'error': 'No message provided'}), 400
 
@@ -152,8 +157,12 @@ def chat():
     else:
         try:
             user_lang = detect(user_message)
-        except Exception:
+            print(f"[DEBUG] Auto-detected language: {user_lang}")
+        except Exception as e:
+            print(f"[ERROR] Language detection failed: {e}")
             user_lang = 'en'
+    
+    print(f"[DEBUG] Final language: {user_lang}")
     lang_instruction = get_persona_prompt(user_lang)
     if user_lang == 'ar':
         user_message = user_message
@@ -171,47 +180,137 @@ def chat():
     # Ollama configuration
     ollama_url = os.getenv("OLLAMA_API_URL", "http://localhost:11434/api/generate")
     model_name = os.getenv("OLLAMA_MODEL", "gemma3:1b")
+    
+    print(f"[DEBUG] Ollama URL: {ollama_url}")
+    print(f"[DEBUG] Model: {model_name}")
 
     # --- Knowledge base retrieval ---
-    contexts = get_answer_from_db(user_message, user_lang)
+    try:
+        contexts = get_answer_from_db(user_message, user_lang)
+        print(f"[DEBUG] Found {len(contexts)} contexts from DB")
+        if contexts:
+            for i, ctx in enumerate(contexts):
+                print(f"[DEBUG] Context {i+1}: {ctx[:100]}...")
+        else:
+            print(f"[DEBUG] No relevant contexts found for message: {user_message}")
+    except Exception as e:
+        print(f"[ERROR] Database query failed: {e}")
+        contexts = []
+    
     fallback_message = get_fallback_message(user_lang)
 
     if not contexts:
-        print(f"[DB] No relevant contexts found for: {user_message}")
+        print(f"[DEBUG] Using persona fallback prompt")
         # Persona-only prompt, no knowledge base
         from persona import get_persona_fallback_prompt
         prompt = get_persona_fallback_prompt(user_lang, user_message)
     else:
+        print(f"[DEBUG] Using knowledge base prompt with {len(contexts)} contexts")
         # Build context string for Ollama
         context_str = "\n".join([f"- {c}" for c in contexts])
         prompt = f"{lang_instruction}\n\nKnowledge Base:\n{context_str}\n\nUser Question: {user_message}\n\nAnswer strictly using the above knowledge base."
+    
     payload = {
         "model": model_name,
         "prompt": prompt,
         "stream": False
     }
+    
+    print(f"[DEBUG] Sending request to Ollama at {ollama_url}...")
+    print(f"[DEBUG] Payload model: {payload['model']}")
+    print(f"[DEBUG] Prompt length: {len(payload['prompt'])} characters")
+    
+    answer_original = fallback_message
+    
     try:
+        import time
+        start_time = time.time()
+        
+        # Test Ollama connectivity first
+        try:
+            test_resp = requests.get(ollama_url.replace('/api/generate', '/api/tags'), timeout=5)
+            print(f"[DEBUG] Ollama connectivity test status: {test_resp.status_code}")
+        except Exception as conn_e:
+            print(f"[ERROR] Ollama connectivity test failed: {conn_e}")
+            print(f"[ERROR] Make sure Ollama is running and accessible at {ollama_url}")
+            answer = fallback_message
+            raise Exception(f"Ollama not accessible: {conn_e}")
+        
         resp = requests.post(ollama_url, json=payload, timeout=120)
-        resp.raise_for_status()
-        result = resp.json()
-        answer = result.get("response", fallback_message)
-    except Exception as e:
-        answer = f"Error:\n{e}\n"
-
-    # Post-processing filter for forbidden phrases
-    answer_original = answer
-    try:
-        from rewrite import rewrite_to_compliant
-    except ImportError:
-        def rewrite_to_compliant(a, b, c, d):
-            return a
-    if contains_forbidden_phrase(answer, user_lang):
-        rewritten = rewrite_to_compliant(answer, user_message, user_lang, fallback_message)
-        if not rewritten or rewritten == answer:
+        end_time = time.time()
+        
+        print(f"[DEBUG] Response time: {end_time - start_time:.2f} seconds")
+        print(f"[DEBUG] Response status: {resp.status_code}")
+        
+        if resp.status_code != 200:
+            print(f"[ERROR] Ollama returned status {resp.status_code}")
+            print(f"[ERROR] Response text: {resp.text}")
             answer = fallback_message
         else:
-            answer = rewritten
+            try:
+                result = resp.json()
+                print(f"[DEBUG] Response keys: {list(result.keys())}")
+                
+                raw_response = result.get("response", "")
+                if not raw_response or raw_response.strip() == "":
+                    print(f"[ERROR] Empty response from Ollama")
+                    answer = fallback_message
+                else:
+                    answer = raw_response
+                    answer_original = answer
+                    print(f"[DEBUG] Got valid response from Ollama ({len(answer)} chars)")
+                    print(f"[DEBUG] Response preview: {answer[:200]}...")
+                    
+            except json.JSONDecodeError as json_e:
+                print(f"[ERROR] Failed to parse Ollama JSON response: {json_e}")
+                print(f"[ERROR] Raw response: {resp.text}")
+                answer = fallback_message
+                
+    except requests.exceptions.Timeout:
+        print(f"[ERROR] Ollama request timed out after 120 seconds")
+        answer = fallback_message
+    except requests.exceptions.ConnectionError as e:
+        print(f"[ERROR] Cannot connect to Ollama at {ollama_url}")
+        print(f"[ERROR] Connection error details: {e}")
+        print(f"[ERROR] Is Ollama running? Try: ollama serve")
+        answer = fallback_message
+    except requests.exceptions.RequestException as e:
+        print(f"[ERROR] Request to Ollama failed: {e}")
+        answer = fallback_message
+    except Exception as e:
+        print(f"[ERROR] Unexpected error calling Ollama: {e}")
+        answer = fallback_message
+
+    # Post-processing filter for forbidden phrases
+    print(f"[DEBUG] Starting post-processing...")
+    try:
+        from rewrite import rewrite_to_compliant
+        print(f"[DEBUG] Rewrite module available")
+    except ImportError:
+        print(f"[DEBUG] Rewrite module not available, using fallback")
+        def rewrite_to_compliant(a, b, c, d):
+            return a
+    
+    try:
+        if contains_forbidden_phrase(answer, user_lang):
+            print(f"[DEBUG] Forbidden phrase detected, attempting rewrite...")
+            rewritten = rewrite_to_compliant(answer, user_message, user_lang, fallback_message)
+            if not rewritten or rewritten == answer:
+                print(f"[DEBUG] Rewrite failed, using fallback message")
+                answer = fallback_message
+            else:
+                print(f"[DEBUG] Rewrite successful")
+                answer = rewritten
+        else:
+            print(f"[DEBUG] No forbidden phrases detected")
+    except Exception as pp_e:
+        print(f"[ERROR] Post-processing failed: {pp_e}")
+        # Don't change the answer if post-processing fails
+    
     processed_answer = str(answer)
+    print(f"[DEBUG] Final answer length: {len(processed_answer)} chars")
+    print(f"[DEBUG] Final answer preview: {processed_answer[:200]}...")
+    
     chat_history.append({"role": "assistant", "content": processed_answer})
     
     # Keep only the last 5 messages (excluding system prompt)
