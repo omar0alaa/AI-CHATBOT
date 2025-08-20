@@ -4,7 +4,7 @@ import os
 from dotenv import load_dotenv
 import nltk
 from flask_session import Session
-from logger import setup_logger
+from services.logging_service import setup_logger
 from services.database_service import init_db
 
 # Import route blueprints

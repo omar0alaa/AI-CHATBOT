@@ -2,7 +2,8 @@
 
 import sqlite3
 from difflib import SequenceMatcher
-from logger import log_info, log_error, log_debug
+from .logging_service import log_info, log_error, log_debug
+from .ai_config import ai_config
 
 DB_PATH = 'youlearnt_bank.db'
 
@@ -56,8 +57,9 @@ class DatabaseService:
                 scored.append((score, q_en, answer))
             
             scored.sort(reverse=True)
-            # Return top 3 answers above higher threshold (more restrictive)
-            top_contexts = [a for s, q, a in scored[:3] if s >= 0.7]
+            # Return top N answers above configurable threshold
+            top_contexts = [a for s, q, a in scored[:ai_config.MAX_KNOWLEDGE_CONTEXTS] 
+                          if s >= ai_config.SIMILARITY_THRESHOLD]
             return top_contexts
             
         except Exception as e:

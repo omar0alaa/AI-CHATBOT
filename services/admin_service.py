@@ -1,7 +1,7 @@
 # Admin service - Handles admin-related business logic
 
 import os
-from logger import log_info, setup_logger
+from .logging_service import log_info, setup_logger
 
 
 class AdminService:

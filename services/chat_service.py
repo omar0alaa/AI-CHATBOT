@@ -5,17 +5,18 @@ import json
 import os
 import requests
 from langdetect import detect
-from persona import get_persona_prompt
-from postprocess import contains_forbidden_phrase, get_fallback_message, contains_inappropriate_content, get_inappropriate_response, contains_inappropriate_content, get_inappropriate_response
-from logger import log_debug, log_info, log_warning, log_error
+from .persona_service import get_persona_prompt, get_persona_fallback_prompt
+from .content_service import contains_forbidden_phrase, get_fallback_message, contains_inappropriate_content, get_inappropriate_response
+from .logging_service import log_debug, log_info, log_warning, log_error
 from .database_service import get_answer_from_db
+from .ai_config import ai_config
 
 
 class ChatService:
     #Service class for handling chat operations    
     def __init__(self):
-        self.ollama_url = os.getenv("OLLAMA_API_URL", "http://localhost:11434/api/generate")
-        self.model_name = os.getenv("OLLAMA_MODEL", "gemma3:1b")
+        self.ollama_url = ai_config.OLLAMA_API_URL
+        self.model_name = ai_config.OLLAMA_MODEL
     
     def process_message(self, user_message, ui_lang, chat_history):
         #Process a user message and return AI response
@@ -45,7 +46,7 @@ class ChatService:
         contexts = self._get_knowledge_context(user_message, user_lang)
         
         # Generate AI response
-        answer = self._generate_ai_response(user_message, user_lang, contexts)
+        answer = self._generate_ai_response(user_message, user_lang, contexts, updated_history)
         
         # Post-process the response
         processed_answer = self._post_process_response(answer, user_message, user_lang)
@@ -72,7 +73,7 @@ class ChatService:
                 return user_lang
             except Exception as e:
                 log_error(f"Language detection failed: {e}")
-                return 'en'
+                return ai_config.DEFAULT_LANGUAGE
     
     def _update_chat_history(self, chat_history, user_message, user_lang):
         #Update chat history with system prompt and user message
@@ -100,7 +101,82 @@ class ChatService:
             log_error(f"Database query failed: {e}")
             return []
     
-    def _generate_ai_response(self, user_message, user_lang, contexts):
+    def _get_conversation_context(self, chat_history):
+        #Extract relevant conversation context from chat history
+        try:
+            # Get last few AI responses for context (excluding system messages)
+            ai_responses = []
+            for msg in reversed(chat_history):
+                if msg['role'] == 'assistant':
+                    ai_responses.append(msg['content'])
+                if len(ai_responses) >= ai_config.MAX_CONVERSATION_CONTEXT:  # Configurable number of AI responses
+                    break
+            
+            if ai_responses:
+                # Reverse to get chronological order
+                ai_responses.reverse()
+                context = " | ".join(ai_responses)
+                log_debug(f"Conversation context: {context[:100]}...")
+                return context
+            else:
+                log_debug("No conversation context found")
+                return ""
+        except Exception as e:
+            log_error(f"Failed to extract conversation context: {e}")
+            return ""
+    
+    def _is_follow_up_question(self, user_message, user_lang):
+        #Check if the user message is a follow-up question about previous conversation
+        if user_lang == 'ar':
+            follow_up_indicators = [
+                'ماذا قلت', 'ما قلته', 'رسالتك الأخيرة', 'إجابتك الأخيرة',
+                'ذكرت أن', 'قلت إن', 'أخبرتني', 'الشيء الذي ذكرته',
+                'ما تحدثنا عنه', 'عما قلته', 'حول ما ذكرت', 'بخصوص ما قلت',
+                'المزيد عن', 'تفاصيل أكثر', 'اشرح لي أكثر'
+            ]
+        else:
+            follow_up_indicators = [
+                'what did you say', 'what you said', 'your last message', 'your previous response',
+                'you mentioned', 'you said that', 'you told me', 'what you mentioned',
+                'what we discussed', 'about what you said', 'regarding what you mentioned',
+                'more about', 'tell me more', 'explain more', 'elaborate on',
+                'your answer', 'your response', 'you just said', 'that you mentioned'
+            ]
+        
+        user_lower = user_message.lower().strip()
+        return any(indicator in user_lower for indicator in follow_up_indicators)
+    
+    def _is_general_business_question(self, user_message, user_lang):
+        #Check if the user message is a general business/service question
+        if user_lang == 'ar':
+            business_keywords = [
+                'خدمة', 'خدمات', 'منتج', 'منتجات', 'سعر', 'أسعار', 'تكلفة',
+                'كيف', 'ماذا', 'متى', 'أين', 'لماذا', 'من',
+                'سياسة', 'خصوصية', 'دعم', 'مساعدة', 'تواصل',
+                'اشتراك', 'تسجيل', 'حساب', 'ملف', 'معلومات'
+            ]
+        else:
+            business_keywords = [
+                'service', 'services', 'product', 'products', 'price', 'pricing', 'cost',
+                'how', 'what', 'when', 'where', 'why', 'who', 'can', 'do', 'does',
+                'policy', 'privacy', 'support', 'help', 'contact', 'terms',
+                'subscription', 'signup', 'account', 'profile', 'information',
+                'features', 'benefits', 'plans', 'options', 'details',
+                'about', 'learn', 'youlearnt', 'youlearn', 'company', 'business',
+                'link', 'links', 'website', 'email', 'phone', 'address'
+            ]
+        
+        user_lower = user_message.lower().strip()
+        # If message contains business keywords and isn't too short, consider it a business question
+        has_keywords = any(keyword in user_lower for keyword in business_keywords)
+        is_reasonable_length = len(user_message.strip()) >= 3
+        
+        # Add debug logging to see what's happening
+        log_debug(f"Business question check: '{user_message}' -> keywords: {has_keywords}, length: {is_reasonable_length}")
+        
+        return has_keywords and is_reasonable_length
+    
+    def _generate_ai_response(self, user_message, user_lang, contexts, chat_history):
         #Generate AI response using Ollama
         log_debug(f"Ollama URL: {self.ollama_url}")
         log_debug(f"Model: {self.model_name}")
@@ -109,32 +185,59 @@ class ChatService:
         lang_instruction = get_persona_prompt(user_lang)
         
         # Check if it's a simple greeting
-        greetings = ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening', 'مرحبا', 'أهلا', 'السلام عليكم', 'صباح الخير', 'مساء الخير']
+        greetings = ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening', 'مرحبا', 'أهلا', 'السلام عليكم', 'صباح الخير', 'هلا','مساء الخير']
         help_requests = ['help', 'can you help', 'i need help', 'مساعدة', 'هل يمكنك مساعدتي', 'أحتاج مساعدة']
         
         user_lower = user_message.lower().strip()
         is_greeting = any(greeting in user_lower for greeting in greetings)
         is_help_request = any(help_req in user_lower for help_req in help_requests)
         
-        # Build prompt based on whether we have context
+        # Get conversation context from chat history
+        conversation_context = self._get_conversation_context(chat_history)
+        
+        # Get AI restrictiveness setting
+        restrictiveness = ai_config.get_restrictiveness()
+        log_debug(f"Current restrictiveness level: {restrictiveness}")
+        
+        # Build prompt based on context availability and restrictiveness
         if not contexts:
             if is_greeting or is_help_request:
                 log_debug("Processing greeting/help request with fallback prompt")
-                from persona import get_persona_fallback_prompt
                 prompt = get_persona_fallback_prompt(user_lang, user_message)
+            elif conversation_context and self._is_follow_up_question(user_message, user_lang):
+                log_debug("Processing follow-up question about previous conversation")
+                # Allow follow-up questions about previous responses
+                context_str = f"- Previous conversation: {conversation_context}"
+                prompt = f"{lang_instruction}\n\nAvailable Information:\n{context_str}\n\nUser Question: {user_message}\n\nIMPORTANT: Answer based on our previous conversation if the question relates to it. For general business questions, provide helpful responses. If you cannot answer, respond with: 'You can try rephrasing your question or reach out to our support team for more detailed help.'"
+            elif self._is_general_business_question(user_message, user_lang) and restrictiveness in ['balanced', 'open']:
+                log_debug("Processing general business question - allowing AI to respond")
+                # Allow general business-related questions in balanced or open mode
+                prompt = f"{lang_instruction}\n\nUser Question: {user_message}\n\nIMPORTANT: This appears to be a general business question. Provide a helpful, professional response. If you cannot provide a good answer, say: 'You can try rephrasing your question or reach out to our support team for more detailed help.'"
+            elif restrictiveness == 'open':
+                log_debug("open mode - allowing AI to attempt any appropriate question")
+                # In open mode, try to answer any appropriate question
+                prompt = f"{lang_instruction}\n\nUser Question: {user_message}\n\nIMPORTANT: Provide a helpful response to this question. Be professional and informative. If you cannot provide a good answer, say: 'You can try rephrasing your question or reach out to our support team for more detailed help.'"
             else:
-                log_debug("No context found and not a greeting - returning fallback message")
+                log_debug(f"No context found and restrictiveness is {restrictiveness} - returning fallback message")
                 return fallback_message
         else:
             log_debug(f"Using knowledge base prompt with {len(contexts)} contexts")
-            context_str = "\n".join([f"- {c}" for c in contexts])
-            prompt = f"{lang_instruction}\n\nAvailable Information:\n{context_str}\n\nUser Question: {user_message}\n\nIMPORTANT: Only answer if the question can be fully answered using the above information. If not, respond with the standard fallback message."
+            
+            # Include both knowledge base and conversation context
+            all_context = []
+            all_context.extend([f"Knowledge: {c}" for c in contexts])
+            if conversation_context:
+                all_context.append(f"Previous conversation: {conversation_context}")
+            
+            context_str = "\n".join([f"- {c}" for c in all_context])
+            prompt = f"{lang_instruction}\n\nAvailable Information:\n{context_str}\n\nUser Question: {user_message}\n\nIMPORTANT: Answer based on the available information above. You can reference previous parts of our conversation if the question relates to something we discussed. Provide detailed and helpful responses."
         
         # Prepare request payload
         payload = {
             "model": self.model_name,
             "prompt": prompt,
-            "stream": False
+            "stream": ai_config.OLLAMA_STREAM,
+            "options": ai_config.get_ollama_options()
         }
         
         log_debug(f"Sending request to Ollama at {self.ollama_url}...")
@@ -152,7 +255,8 @@ class ChatService:
         
         # Test connectivity first
         try:
-            test_resp = requests.get(self.ollama_url.replace('/api/generate', '/api/tags'), timeout=5)
+            test_resp = requests.get(self.ollama_url.replace('/api/generate', '/api/tags'), 
+                                   timeout=ai_config.OLLAMA_CONNECTIVITY_TIMEOUT)
             log_debug(f"Ollama connectivity test: {test_resp.status_code}")
         except Exception as conn_e:
             log_error(f"Ollama connectivity test failed: {conn_e}")
@@ -160,7 +264,7 @@ class ChatService:
             raise Exception(f"Ollama not accessible: {conn_e}")
         
         # Make the actual request
-        resp = requests.post(self.ollama_url, json=payload, timeout=120)
+        resp = requests.post(self.ollama_url, json=payload, timeout=ai_config.OLLAMA_REQUEST_TIMEOUT)
         end_time = time.time()
         
         log_debug(f"Response time: {end_time - start_time:.2f} seconds")
@@ -193,7 +297,7 @@ class ChatService:
         fallback_message = get_fallback_message(user_lang)
         
         try:
-            from rewrite import rewrite_to_compliant
+            from .content_service import rewrite_to_compliant
             log_debug(f"Rewrite module available")
         except ImportError:
             log_warning(f"Rewrite module not available")
@@ -221,10 +325,16 @@ class ChatService:
         #Add AI response to chat history and maintain size limit
         chat_history.append({"role": "assistant", "content": processed_answer})
         
-        # Keep only the last 5 messages (excluding system prompt)
+        # Keep only the last configured exchanges (user + assistant messages, excluding system prompt)
         system_msgs = [msg for msg in chat_history if msg['role'] == 'system']
         non_system_msgs = [msg for msg in chat_history if msg['role'] != 'system']
-        return system_msgs + non_system_msgs[-5:]
+        
+        # Keep last N messages (N exchanges) or all if less than N
+        max_messages = ai_config.get_max_history_messages()
+        if len(non_system_msgs) > max_messages:
+            non_system_msgs = non_system_msgs[-max_messages:]
+        
+        return system_msgs + non_system_msgs
     
     def _save_debug_info(self, chat_history, user_message, original_response, processed_response):
         #Save debug information to file
