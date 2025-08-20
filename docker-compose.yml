@@ -1,0 +1,21 @@
+version: "3.9"
+
+services:
+  app:
+    build: . # build from your Dockerfile
+    container_name: ai-chatbot
+    ports:
+      - "5000:5000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - FLASK_APP=app.py
+      - FLASK_ENV=development
+    env_file:
+      - .env
+    volumes:
+      - .:/app # mount local code for live reload
+    restart: unless-stopped
+
+networks:
+  ollama-net:
+    external: true
