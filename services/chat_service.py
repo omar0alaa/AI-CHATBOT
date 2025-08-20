@@ -186,7 +186,7 @@ class ChatService:
         
         # Check if it's a simple greeting
         greetings = ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening', 'مرحبا', 'أهلا', 'السلام عليكم', 'صباح الخير', 'هلا','مساء الخير']
-        help_requests = ['help', 'can you help', 'i need help', 'مساعدة', 'هل يمكنك مساعدتي', 'أحتاج مساعدة']
+        help_requests = ['help', 'help me', 'can you help', 'i need help', 'مساعدة', 'هل يمكنك مساعدتي', 'أحتاج مساعدة', 'ساعدني', 'ساعدنى']
         
         user_lower = user_message.lower().strip()
         is_greeting = any(greeting in user_lower for greeting in greetings)

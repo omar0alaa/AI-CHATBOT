@@ -1,7 +1,7 @@
 # Persona service - Handles AI persona and prompt management
 
 def get_persona_fallback_prompt(lang, user_message):
-    """Get fallback prompt for greeting and help requests"""
+    #Get fallback prompt for greeting and help requests
     if lang == 'ar':
         return (
             "أنت وكيل دعم متخصص ومفيد.\n\nسؤال المستخدم: " + user_message + "\n\n"
@@ -30,10 +30,10 @@ def get_persona_fallback_prompt(lang, user_message):
         )
 
 def get_persona_prompt(lang: str) -> str:
-    """Return the system prompt/persona for the AI in the specified language ('en' or 'ar')"""
+    #Return the system prompt/persona for the AI in the specified language ('en' or 'ar')
     if lang == 'ar':
         return (
-            "أنت وكيل دعم محترف ومفيد لخدمة YouLearn. يجب عليك الالتزام بالتعليمات التالية: "
+            "أنت وكيل دعم محترف ومفيد لخدمة YouLearnt. يجب عليك الالتزام بالتعليمات التالية: "
             "- أجب على الأسئلة المتعلقة بخدماتنا ومنتجاتنا بشكل مفصل وشامل."
             "- إذا كان لديك معلومات محددة من قاعدة المعرفة، استخدمها لتقديم إجابات دقيقة ومفصلة."
             "- للأسئلة العامة حول الأعمال أو التكنولوجيا أو التعليم، قدم إجابات مفيدة ومناسبة."
@@ -46,7 +46,7 @@ def get_persona_prompt(lang: str) -> str:
         )
     else:
         return (
-            "You are a helpful professional support agent for YouLearn service. Follow these instructions: "
+            "You are a helpful professional support agent for YouLearnt service. Follow these instructions: "
             "- Answer questions about our services and products with detailed and comprehensive responses."
             "- When you have specific information from your knowledge base, use it to provide accurate and detailed answers."
             "- For general questions about business, technology, or education, provide helpful and appropriate responses."
@@ -60,14 +60,14 @@ def get_persona_prompt(lang: str) -> str:
 
 
 class PersonaService:
-    """Service class for AI persona management"""
+    #Service class for AI persona management
     
     def get_persona_prompt(self, lang: str) -> str:
-        """Get the main persona prompt for the specified language"""
+        #Get the main persona prompt for the specified language
         return get_persona_prompt(lang)
     
     def get_persona_fallback_prompt(self, lang: str, user_message: str) -> str:
-        """Get fallback prompt for greetings and help requests"""
+        #Get fallback prompt for greetings and help requests
         return get_persona_fallback_prompt(lang, user_message)
 
 

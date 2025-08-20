@@ -103,10 +103,10 @@ INAPPROPRIATE_RESPONSE = {
 
 
 class ContentService:
-    """Service class for content filtering and processing"""
+    #Service class for content filtering and processing
     
     def contains_inappropriate_content(self, message: str, lang: str) -> bool:
-        """Check if the user message contains inappropriate content"""
+        #Check if the user message contains inappropriate content
         inappropriate_topics = INAPPROPRIATE_TOPICS.get(lang, [])
         message_check = message.lower() if lang == 'en' else message.lower()
         
@@ -117,11 +117,11 @@ class ContentService:
         return False
     
     def get_inappropriate_response(self, lang: str) -> str:
-        """Get the appropriate response for inappropriate content"""
+        #Get the appropriate response for inappropriate content
         return INAPPROPRIATE_RESPONSE.get(lang, INAPPROPRIATE_RESPONSE['en'])
     
     def contains_forbidden_phrase(self, answer: str, lang: str) -> bool:
-        """Check if answer contains forbidden phrases"""
+        #Check if answer contains forbidden phrases
         phrases = FORBIDDEN_PHRASES.get(lang, [])
         answer_check = answer.lower() if lang == 'en' else answer
         for phrase in phrases:
@@ -132,11 +132,11 @@ class ContentService:
         return False
     
     def get_fallback_message(self, lang: str) -> str:
-        """Get fallback message for the specified language"""
+        #Get fallback message for the specified language
         return FALLBACK_MESSAGES.get(lang, FALLBACK_MESSAGES['en'])
     
     def rewrite_to_compliant(self, answer: str, user_question: str, lang: str, fallback_message: str) -> str:
-        """Rewrite answer to be compliant (simplified version without transformers dependency)"""
+        #Rewrite answer to be compliant (simplified version without transformers dependency)
         try:
             from transformers import pipeline
             
@@ -180,21 +180,21 @@ content_service = ContentService()
 
 # Convenience functions for backward compatibility
 def contains_inappropriate_content(message: str, lang: str) -> bool:
-    """Check if the user message contains inappropriate content"""
+    #Check if the user message contains inappropriate content
     return content_service.contains_inappropriate_content(message, lang)
 
 def get_inappropriate_response(lang: str) -> str:
-    """Get the appropriate response for inappropriate content"""
+    #Get the appropriate response for inappropriate content
     return content_service.get_inappropriate_response(lang)
 
 def contains_forbidden_phrase(answer: str, lang: str) -> bool:
-    """Check if answer contains forbidden phrases"""
+    #Check if answer contains forbidden phrases
     return content_service.contains_forbidden_phrase(answer, lang)
 
 def get_fallback_message(lang: str) -> str:
-    """Get fallback message for the specified language"""
+    #Get fallback message for the specified language
     return content_service.get_fallback_message(lang)
 
 def rewrite_to_compliant(answer: str, user_question: str, lang: str, fallback_message: str) -> str:
-    """Rewrite answer to be compliant"""
+    #Rewrite answer to be compliant
     return content_service.rewrite_to_compliant(answer, user_question, lang, fallback_message)
