@@ -28,7 +28,7 @@ var/
 last_prompt.json
 YouLearnt_logic.docx
 ngrok.exe
-
+logs/
 
 #Client/server Side only
 uploaded_docs/

@@ -1,4 +1,5 @@
 import re
+from logger import log_post_process
 
 #Post-processing filter for forbidden phrases
 FORBIDDEN_PHRASES = {
@@ -80,7 +81,7 @@ def contains_forbidden_phrase(answer: str, lang: str) -> bool:
     for phrase in phrases:
         # Only use direct substring match (exact)
         if phrase in answer_check:
-            print(f"[FILTER] Matched exact: {phrase}")
+            log_post_process(f"FILTER - Matched exact: {phrase}")
             return True
     return False
 
