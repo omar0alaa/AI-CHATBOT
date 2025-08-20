@@ -1,6 +1,20 @@
 import re
 from logger import log_post_process
 
+# Inappropriate topics that should be immediately rejected
+INAPPROPRIATE_TOPICS = {
+    'en': [
+        'racism', 'hate speech', 'terrorism', 'violence',
+        'suicide', 'self harm', 'drugs', 'illegal activities', 'weapons',
+        'adult content', 'sexual content', 'pornography'
+    ],
+    'ar': [
+        'العنصرية', 'خطاب الكراهية', 'الإرهاب', 'العنف',
+        'الانتحار', 'إيذاء النفس', 'المخدرات', 'الأنشطة غير القانونية', 'الأسلحة',
+        'محتوى للبالغين', 'محتوى جنسي', 'الإباحية'
+    ]
+}
+
 #Post-processing filter for forbidden phrases
 FORBIDDEN_PHRASES = {
     'ar': [
@@ -74,6 +88,26 @@ FALLBACK_MESSAGES = {
     'ar': "يمكنك محاولة إعادة صياغة سؤالك أو التواصل مع فريق الدعم الخاص بنا للحصول على مساعدة أكثر تفصيلاً.",
     'en': "You can try rephrasing your question or reach out to our support team for more detailed help."
 }
+
+INAPPROPRIATE_RESPONSE = {
+    'ar': "أعتذر، لا يمكنني مناقشة هذا الموضوع. يرجى طرح سؤال متعلق بخدماتنا.",
+    'en': "I apologize, but I cannot discuss this topic. Please ask a question related to our services."
+}
+
+def contains_inappropriate_content(message: str, lang: str) -> bool:
+    """Check if the user message contains inappropriate content"""
+    inappropriate_topics = INAPPROPRIATE_TOPICS.get(lang, [])
+    message_check = message.lower() if lang == 'en' else message.lower()
+    
+    for topic in inappropriate_topics:
+        if topic.lower() in message_check:
+            log_post_process(f"CONTENT FILTER - Inappropriate topic detected: {topic}")
+            return True
+    return False
+
+def get_inappropriate_response(lang: str) -> str:
+    """Get the appropriate response for inappropriate content"""
+    return INAPPROPRIATE_RESPONSE.get(lang, INAPPROPRIATE_RESPONSE['en'])
 
 def contains_forbidden_phrase(answer: str, lang: str) -> bool:
     phrases = FORBIDDEN_PHRASES.get(lang, [])
