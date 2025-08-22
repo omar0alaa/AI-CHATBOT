@@ -1,5 +1,6 @@
 import time
 from flask import Flask
+from flask_cors import CORS
 import os
 from dotenv import load_dotenv
 import nltk
@@ -26,6 +27,9 @@ app = Flask(__name__, static_folder='static')
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'protoai-secret-key')
 app.config['SESSION_TYPE'] = 'filesystem'
 Session(app)
+
+# Enable CORS for all routes
+CORS(app, supports_credentials=True)
 
 # Initialize logger
 setup_logger()
