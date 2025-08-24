@@ -1,6 +1,6 @@
 flask
 Flask-Session
-Flask-CORS
+flask_cors
 requests
 python-dotenv
 sumy
