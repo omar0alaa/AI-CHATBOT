@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>One-Line Integration Example</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 40px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 { color: #2B4C8C; }
+        .highlight {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .code {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 5px;
+            padding: 15px;
+            font-family: monospace;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div style="position:absolute;top:20px;left:20px;z-index:1001;">
+        <a href="/" class="lang-btn" style="text-decoration:none;display:inline-flex;align-items:center;gap:4px;background:#2B4C8C;color:white;padding:6px 12px;border-radius:4px;font-size:12px;font-weight:500;">← Back to Chat</a>
+    </div>
+    <div class="container">
+        <h1>YouLearnt Chat Widget Integration</h1>
+        <p>This is a page for testing and show casing the widget and is <strong style="color: red;">not meant for production use.</strong></p>
+
+    <!-- ONE-LINE INTEGRATION EXAMPLE -->
+    <script src="{{ url_for('static', filename='js/youlearnt-embed.js') }}" 
+            data-api-url="https://chat.youlearnt.com"
+            data-user-name="Demo User"
+            data-auto-open="false"
+            data-enable-notifications="true"
+            data-lang="ar"></script>
+
+</body>
+</html>

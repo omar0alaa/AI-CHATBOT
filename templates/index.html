@@ -7,20 +7,37 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    
 </head>
 <body>
-    <div class="chat-container">
-        <div class="chat-header">
+    <div class="chat-container" style="background:#F8F9FA; border-radius:16px; box-shadow:0 10px 25px rgba(0,0,0,0.10); max-width:480px; margin:40px auto; border:1.5px solid #E2E8F0;">
+        <div class="chat-header" style="background:white; border-radius:16px 16px 0 0; border-bottom:1px solid #F0F0F0; padding:16px 20px;">
             <div class="d-flex align-items-center justify-content-between w-100">
-                <h2 class="mb-0"><i class="fas fa-robot me-2"></i> <span class="proto-ai-logo">PROTO<span class="highlight">AI</span></span></h2>
                 <div class="d-flex align-items-center gap-2">
-                    <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode">
+                    <div class="logo-squares" style="display:grid;grid-template-columns:repeat(2,1fr);gap:2px;width:24px;height:24px;">
+                        <div class="square red-circle" style="width:10px;height:10px;background:#E53E3E;border-radius:50%;"></div>
+                        <div class="square blue-circle" style="width:10px;height:10px;background:#2B4C8C;border-radius:50%;"></div>
+                        <div class="square red-square" style="width:10px;height:10px;background:#E53E3E;border-radius:2px;"></div>
+                        <div class="square blue-square" style="width:10px;height:10px;background:#2B4C8C;border-radius:2px;"></div>
+                    </div>
+                    <div class="brand-text" style="display:flex;flex-direction:column;gap:2px;">
+                        <span class="brand-name" style="font-size:18px;font-weight:600;color:#E53E3E;">Ask<span style="color:#2B4C8C;">YL</span>.AI</span>
+                        <div class="status-text" style="display:flex;align-items:center;gap:4px;font-size:12px;color:#718096;">
+                            <span class="status-bullet" style="color:#10B981;font-weight:bold;">•</span>
+                            <span id="online-status">Online</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <button id="theme-toggle" hidden class="theme-toggle" aria-label="Toggle dark mode" style="background:#2B4C8C;color:white;border:none;border-radius:4px;padding:6px 10px;">
                         <i class="fas fa-sun"></i>
                     </button>
-                    <button id="lang-toggle" class="lang-toggle" type="button" title="Change language" style="font-size:1.2em;">
-                        <i class="fas fa-globe"></i>
-                    </button>
-                    <button id="admin-db-btn" class="theme-toggle" type="button" title="Admin DB Editor" aria-label="Admin DB Editor">
+                    <div class="language-toggle" style="display:flex;gap:6px;">
+                        <button id="lang-ar" class="lang-btn" type="button">ع</button>
+                        <button id="lang-en" class="lang-btn active" type="button">En</button>
+                        <a href="/widget" class="lang-btn" style="text-decoration:none;display:flex;align-items:center;gap:4px;" target="_blank">Widget Test</a>
+                    </div>
+                    <button id="admin-db-btn" hidden class="theme-toggle" type="button" title="Admin DB Editor" aria-label="Admin DB Editor" style="background:#E53E3E;color:white;border:none;border-radius:4px;padding:6px 10px;">
                         <a href="/admin/db" style="color:inherit; text-decoration:none; display:flex; align-items:center; justify-content:center; width:100%; height:100%;">
                             <i class="fas fa-database"></i>
                         </a>
@@ -32,22 +49,33 @@
         <div id="uploaded-files-bar" class="px-3 py-2" style="display:none; background:#232946; color:#fff; border-bottom:1px solid #444; font-size:0.95em;"></div>
         <div class="chat-body">
             <div class="chat-messages" id="chat-messages">
-                <div class="message bot-message" id="welcome-message">
-                    Hello! I'm Proto AI, your intelligent assistant. How can I help you today?
+                <div class="message" id="welcome-message">
+                    <div class="bot-avatar">
+                        <div class="logo-squares">
+                            <div class="square red-circle"></div>
+                            <div class="square blue-circle"></div>
+                            <div class="square red-square"></div>
+                            <div class="square blue-square"></div>
+                        </div>
+                    </div>
+                    <div class="message-content">
+                        <div class="message-text">Hello! I'm AskYL.AI, your intelligent assistant. How can I help you today?</div>
+                        <div class="message-time">now</div>
+                    </div>
                 </div>
             </div>
         </div>
-        <div class="chat-input d-flex align-items-center gap-2">
-            <input type="text" id="message-input" class="form-control" placeholder="Ask Proto AI anything...">
+        <div class="chat-input d-flex align-items-center gap-2" style="background:white; border-top:1px solid #E2E8F0; padding:16px 20px 24px 20px; border-radius:0 0 16px 16px;">
+            <input type="text" id="message-input" class="form-control" placeholder="Ask AskYL.AI anything..." style="border:1.5px solid #E2E8F0; border-radius:24px; padding:10px 16px; font-size:15px;">
             <input type="file" id="fileInput" name="file" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg" style="display:none;">
-            <button id="uploadBtn" class="btn btn-outline-secondary" type="button" title="Upload File">
-                <i class="fas fa-paperclip"></i>
+            <button id="uploadBtn" hidden class="btn" type="button" title="Upload File" style="background:#2B4C8C;color:white;border:none;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;padding:0;">
+                <i class="fas fa-paperclip" style="font-size:16px;"></i>
             </button>
-            <button id="send-button" class="btn btn-primary">
-                <i class="fas fa-paper-plane"></i>
+            <button id="send-button" class="btn" style="background:#E53E3E;color:white;border:none;border-radius:50%;height:42px;display:flex;align-items:center;justify-content:center;padding:0;">
+                <i class="fas fa-paper-plane" style="font-size:16px;"></i>
             </button>
         </div>
-        <div id="uploadStatus" class="mb-2 px-2 text-info small"></div>
+        <div id="uploadStatus" hidden class="mb-2 px-2 text-info small"></div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
@@ -64,24 +92,30 @@
         bar.textContent = lang === 'ar' ? 'تم رفع الملف: ' + filename : 'Uploaded: ' + filename;
         bar.style.display = 'block';
     };
-    // Language switcher icon
-    document.getElementById('lang-toggle').addEventListener('click', function() {
-        const current = localStorage.getItem('protoai_lang') || 'en';
-        const next = current === 'ar' ? 'en' : 'ar';
-        localStorage.setItem('protoai_lang', next);
+    // Language toggle buttons
+    document.getElementById('lang-ar').addEventListener('click', function() {
+        localStorage.setItem('protoai_lang', 'ar');
+        location.reload();
+    });
+    document.getElementById('lang-en').addEventListener('click', function() {
+        localStorage.setItem('protoai_lang', 'en');
         location.reload();
     });
     // UI translations
     const translations = {
         en: {
-            welcome: "Hello! I'm Proto AI, your intelligent assistant. How can I help you today?",
-            placeholder: "Ask Proto AI anything...",
+            welcome: "Hello! I'm AskYL.AI, your intelligent assistant. How can I help you today?",
+            placeholder: "Ask AskYL.AI anything...",
             upload: "Upload File",
+            online: "Online",
+            powered: "Powered by AI"
         },
         ar: {
-            welcome: "مرحباً! أنا بروتو AI، مساعدك الذكي. كيف يمكنني مساعدتك اليوم؟",
-            placeholder: "اسأل بروتو AI أي شيء...",
-            upload: "رفع ملف"
+            welcome: "مرحباً! أنا AskYL.AI، مساعدك الذكي. كيف يمكنني مساعدتك اليوم؟",
+            placeholder: "اسأل AskYL.AI أي شيء...",
+            upload: "رفع ملف",
+            online: "متصل",
+            powered: "مشغل بواسطة الذكاء الاصطناعي"
         }
     };
     // On load, set language and UI
@@ -89,12 +123,24 @@
         const lang = localStorage.getItem('protoai_lang') || 'en';
         document.documentElement.lang = lang;
         document.body.dir = lang === 'ar' ? 'rtl' : 'ltr';
-        document.getElementById('welcome-message').textContent = translations[lang].welcome;
+        // Update welcome message text
+        const welcomeMsg = document.getElementById('welcome-message');
+        if (welcomeMsg) {
+            const textDiv = welcomeMsg.querySelector('.message-text');
+            if (textDiv) textDiv.textContent = translations[lang].welcome;
+        }
         document.getElementById('message-input').placeholder = translations[lang].placeholder;
         document.getElementById('uploadBtn').title = translations[lang].upload;
-        // Optionally, change send button icon direction for RTL
-        document.getElementById('send-button').innerHTML = lang === 'ar' ? '<i class="fas fa-paper-plane fa-flip-horizontal"></i>' : '<i class="fas fa-paper-plane"></i>';
+        // Update online status
+        const onlineStatus = document.getElementById('online-status');
+        if (onlineStatus) onlineStatus.textContent = translations[lang].online;
+    // Optionally, change send button icon direction for RTL
+    document.getElementById('send-button').innerHTML = lang === 'ar' ? '<i class="fas fa-paper-plane"></i>' : '<i class="fas fa-paper-plane"></i>';
+    // Update language button active state
+    document.getElementById('lang-ar').classList.toggle('active', lang === 'ar');
+    document.getElementById('lang-en').classList.toggle('active', lang === 'en');
     })();
     </script>
+    
 </body>
 </html>

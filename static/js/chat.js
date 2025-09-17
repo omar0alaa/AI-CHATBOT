@@ -72,20 +72,67 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     function addMessage(text, sender) {
         removeTypingIndicator();
-        
+
         const messageDiv = document.createElement('div');
         messageDiv.classList.add('message');
-        messageDiv.classList.add(sender === 'user' ? 'user-message' : 'bot-message');
-        
-        // Format AI (bot) messages as Markdown to HTML for better organization
+        if (sender === 'user') messageDiv.classList.add('user');
+
+        // Avatar
+        let avatarDiv;
+            if (sender === 'bot') {
+                avatarDiv = document.createElement('div');
+                avatarDiv.className = 'bot-avatar';
+                avatarDiv.innerHTML = `
+                    <div class="logo-squares">
+                        <div class="square red-circle"></div>
+                        <div class="square blue-circle"></div>
+                        <div class="square red-square"></div>
+                        <div class="square blue-square"></div>
+                    </div>
+                `;
+            } else {
+                avatarDiv = document.createElement('div');
+                avatarDiv.className = 'user-avatar';
+                const lang = localStorage.getItem('protoai_lang') || 'en';
+                avatarDiv.textContent = lang === 'ar' ? 'أنت' : 'You';
+            }
+        messageDiv.appendChild(avatarDiv);
+
+        // Message content
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content';
+
+        // Message text
+        const textDiv = document.createElement('div');
+        textDiv.className = 'message-text';
         if (sender === 'bot') {
-            messageDiv.innerHTML = window.marked ? window.marked.parse(text) : text.replace(/\n/g, '<br>');
+            textDiv.innerHTML = window.marked ? window.marked.parse(text) : text.replace(/\n/g, '<br>');
         } else {
-            messageDiv.textContent = text;
+            textDiv.textContent = text;
         }
-        
+        contentDiv.appendChild(textDiv);
+
+        // Powered by AI (bot only)
+        if (sender === 'bot') {
+            const poweredDiv = document.createElement('div');
+            poweredDiv.className = 'powered-by';
+            poweredDiv.textContent = 'Powered by AI';
+            contentDiv.appendChild(poweredDiv);
+        }
+
+        // Message time
+        const timeDiv = document.createElement('div');
+        timeDiv.className = 'message-time';
+        const now = new Date();
+        const minutes = now.getMinutes().toString().padStart(2, '0');
+        const hours = now.getHours();
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        const displayHours = hours % 12 || 12;
+        timeDiv.textContent = `${displayHours}:${minutes} ${ampm}`;
+        contentDiv.appendChild(timeDiv);
+
+        messageDiv.appendChild(contentDiv);
         chatMessages.appendChild(messageDiv);
-        
         scrollToBottom();
     }
     
