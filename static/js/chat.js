@@ -19,9 +19,8 @@ document.addEventListener('DOMContentLoaded', () => {
      * Initialize theme based on preferences
      */
     function initTheme() {
-        const savedTheme = localStorage.getItem('theme') || 
-            (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
-        setTheme(savedTheme);
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    setTheme(savedTheme);
     }
     
     /**
