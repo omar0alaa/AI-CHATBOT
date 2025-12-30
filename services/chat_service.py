@@ -2,7 +2,6 @@
 
 import time
 import json
-import os
 import requests
 from langdetect import detect
 from .persona_service import get_persona_prompt, get_persona_fallback_prompt
@@ -15,8 +14,9 @@ from .ai_config import ai_config
 class ChatService:
     #Service class for handling chat operations    
     def __init__(self):
-        self.ollama_url = ai_config.OLLAMA_API_URL
-        self.model_name = ai_config.OLLAMA_MODEL
+        self.api_url = ai_config.GROQ_API_URL
+        self.model_name = ai_config.GROQ_MODEL
+        self.api_key = ai_config.GROQ_API_KEY
     
     def process_message(self, user_message, ui_lang, chat_history):
         #Process a user message and return AI response
@@ -177,8 +177,8 @@ class ChatService:
         return has_keywords and is_reasonable_length
     
     def _generate_ai_response(self, user_message, user_lang, contexts, chat_history):
-        #Generate AI response using Ollama
-        log_debug(f"Ollama URL: {self.ollama_url}")
+        #Generate AI response using Groq
+        log_debug(f"Groq URL: {self.api_url}")
         log_debug(f"Model: {self.model_name}")
         
         fallback_message = get_fallback_message(user_lang)
@@ -232,60 +232,76 @@ class ChatService:
             context_str = "\n".join([f"- {c}" for c in all_context])
             prompt = f"{lang_instruction}\n\nAvailable Information:\n{context_str}\n\nUser Question: {user_message}\n\nIMPORTANT: Answer based on the available information above. You can reference previous parts of our conversation if the question relates to something we discussed. Provide detailed and helpful responses."
         
-        # Prepare request payload
+        # Build OpenAI-compatible message payload for Groq
+        messages = [
+            {"role": "system", "content": lang_instruction},
+            {"role": "user", "content": prompt},
+        ]
+
         payload = {
             "model": self.model_name,
-            "prompt": prompt,
-            "stream": ai_config.OLLAMA_STREAM,
-            "options": ai_config.get_ollama_options()
+            "messages": messages,
+            "max_tokens": ai_config.GROQ_MAX_TOKENS,
+            "temperature": ai_config.GROQ_TEMPERATURE,
+            "top_p": ai_config.GROQ_TOP_P,
+            "stream": ai_config.GROQ_STREAM,
         }
         
-        log_debug(f"Sending request to Ollama at {self.ollama_url}...")
-        log_debug(f"Prompt length: {len(payload['prompt'])} characters")
+        log_debug(f"Sending request to Groq at {self.api_url}...")
+        log_debug(f"Prompt length: {len(prompt)} characters")
         
         try:
-            return self._make_ollama_request(payload, fallback_message)
+            return self._make_groq_request(payload, fallback_message)
         except Exception as e:
             log_error(f"AI generation failed: {e}")
             return fallback_message
     
-    def _make_ollama_request(self, payload, fallback_message):
-        #Make request to Ollama API
+    def _make_groq_request(self, payload, fallback_message):
+        #Make request to Groq API
         start_time = time.time()
-        
-        # Test connectivity first
-        try:
-            test_resp = requests.get(self.ollama_url.replace('/api/generate', '/api/tags'), 
-                                   timeout=ai_config.OLLAMA_CONNECTIVITY_TIMEOUT)
-            log_debug(f"Ollama connectivity test: {test_resp.status_code}")
-        except Exception as conn_e:
-            log_error(f"Ollama connectivity test failed: {conn_e}")
-            log_warning(f"Make sure Ollama is running: ollama serve")
-            raise Exception(f"Ollama not accessible: {conn_e}")
-        
-        # Make the actual request
-        resp = requests.post(self.ollama_url, json=payload, timeout=ai_config.OLLAMA_REQUEST_TIMEOUT)
+
+        if not self.api_key:
+            raise Exception("Missing GROQ_API_KEY environment variable")
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        resp = requests.post(
+            self.api_url,
+            headers=headers,
+            json=payload,
+            timeout=ai_config.GROQ_REQUEST_TIMEOUT,
+        )
         end_time = time.time()
         
         log_debug(f"Response time: {end_time - start_time:.2f} seconds")
         log_debug(f"Response status: {resp.status_code}")
         
         if resp.status_code != 200:
-            log_error(f"Ollama error {resp.status_code}: {resp.text}")
+            log_error(f"Groq error {resp.status_code}: {resp.text}")
             return fallback_message
         
         try:
             result = resp.json()
             log_debug(f"Response keys: {list(result.keys())}")
-            
-            raw_response = result.get("response", "")
-            if not raw_response or raw_response.strip() == "":
-                log_error(f"Empty response from Ollama")
+
+            choices = result.get("choices", [])
+            if not choices:
+                log_error("Empty response from Groq (no choices)")
                 return fallback_message
-            
+
+            message = choices[0].get("message", {})
+            raw_response = message.get("content", "")
+
+            if not raw_response or raw_response.strip() == "":
+                log_error("Empty response content from Groq")
+                return fallback_message
+
             log_debug(f"Got valid response ({len(raw_response)} chars)")
             return raw_response
-            
+
         except json.JSONDecodeError as json_e:
             log_error(f"JSON parse error: {json_e}")
             log_debug(f"Raw response: {resp.text}")

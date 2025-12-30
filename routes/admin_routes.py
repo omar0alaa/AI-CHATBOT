@@ -130,27 +130,27 @@ def update_response_style():
         style = data.get('style', 'medium').lower()
         
         if style == 'short':
-            ai_config.OLLAMA_NUM_PREDICT = 256
-            ai_config.OLLAMA_TEMPERATURE = 0.5
-            ai_config.OLLAMA_TOP_P = 0.8
+            ai_config.GROQ_MAX_TOKENS = 256
+            ai_config.GROQ_TEMPERATURE = 0.5
+            ai_config.GROQ_TOP_P = 0.8
             message = "Response style set to SHORT - concise answers"
             
         elif style == 'medium':
-            ai_config.OLLAMA_NUM_PREDICT = 512
-            ai_config.OLLAMA_TEMPERATURE = 0.7
-            ai_config.OLLAMA_TOP_P = 0.9
+            ai_config.GROQ_MAX_TOKENS = 512
+            ai_config.GROQ_TEMPERATURE = 0.7
+            ai_config.GROQ_TOP_P = 0.9
             message = "Response style set to MEDIUM - balanced answers"
             
         elif style == 'long':
-            ai_config.OLLAMA_NUM_PREDICT = 1024
-            ai_config.OLLAMA_TEMPERATURE = 0.8
-            ai_config.OLLAMA_TOP_P = 0.95
+            ai_config.GROQ_MAX_TOKENS = 1024
+            ai_config.GROQ_TEMPERATURE = 0.8
+            ai_config.GROQ_TOP_P = 0.95
             message = "Response style set to LONG - detailed answers"
             
         elif style == 'detailed':
-            ai_config.OLLAMA_NUM_PREDICT = 1536
-            ai_config.OLLAMA_TEMPERATURE = 0.9
-            ai_config.OLLAMA_TOP_P = 0.98
+            ai_config.GROQ_MAX_TOKENS = 1536
+            ai_config.GROQ_TEMPERATURE = 0.9
+            ai_config.GROQ_TOP_P = 0.98
             message = "Response style set to DETAILED - comprehensive answers"
             
         else:
@@ -160,9 +160,9 @@ def update_response_style():
             'success': True,
             'message': message,
             'new_settings': {
-                'max_tokens': ai_config.OLLAMA_NUM_PREDICT,
-                'temperature': ai_config.OLLAMA_TEMPERATURE,
-                'top_p': ai_config.OLLAMA_TOP_P,
+                'max_tokens': ai_config.GROQ_MAX_TOKENS,
+                'temperature': ai_config.GROQ_TEMPERATURE,
+                'top_p': ai_config.GROQ_TOP_P,
                 'style': style
             }
         })
