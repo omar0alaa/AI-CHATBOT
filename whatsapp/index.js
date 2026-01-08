@@ -15,7 +15,7 @@ const {
 // Load env from project root
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
-const CHATBOT_API_URL = process.env.CHATBOT_API_URL || 'http://127.0.0.1:5000/api/chat';
+const CHATBOT_API_URL = process.env.CHATBOT_API_URL || 'http://161.97.147.7:5000/api/chat';
 const CHATBOT_LANG = process.env.CHATBOT_LANG || 'en';
 const AUTH_FOLDER = process.env.WHATSAPP_AUTH_DIR || path.join(__dirname, 'auth_info');
 const DEVICE_NAME = process.env.WHATSAPP_DEVICE_NAME || 'YouLearnt Bot';
