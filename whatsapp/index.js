@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('path');
+const { webcrypto } = require('crypto');
 const axios = require('axios');
 const pino = require('pino');
 const qrcode = require('qrcode-terminal');
@@ -22,6 +23,11 @@ const LOG_LEVEL = process.env.WHATSAPP_LOG_LEVEL || 'info';
 const REPLY_TIMEOUT_MS = parseInt(process.env.WHATSAPP_API_TIMEOUT || '20000', 10);
 
 const logger = pino({ level: LOG_LEVEL });
+
+// Ensure Web Crypto is available for Baileys noise/crypto routines
+if (!globalThis.crypto) {
+  globalThis.crypto = webcrypto;
+}
 
 async function start() {
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
