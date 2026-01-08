@@ -1,6 +1,11 @@
 """Centralized configuration for AI chat settings."""
 
 import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Ensure .env is loaded even if this module is imported before app.py
+load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / '.env')
 
 
 class AIConfig:
