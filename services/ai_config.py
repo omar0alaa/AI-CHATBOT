@@ -18,7 +18,7 @@ class AIConfig:
 
     # === Core Generation Settings ===
     GROQ_STREAM = False                 # Streaming not used in current UI
-    GROQ_MAX_TOKENS = int(os.getenv("GROQ_MAX_TOKENS", "512"))
+    GROQ_MAX_TOKENS = int(os.getenv("GROQ_MAX_TOKENS", "220"))
     GROQ_TEMPERATURE = float(os.getenv("GROQ_TEMPERATURE", "0.7"))
     GROQ_TOP_P = float(os.getenv("GROQ_TOP_P", "0.9"))
 
