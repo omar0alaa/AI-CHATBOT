@@ -1,4 +1,5 @@
 import time
+from pathlib import Path
 from flask import Flask
 from flask_cors import CORS
 import os
@@ -13,8 +14,8 @@ from routes.main_routes import main_bp
 from routes.admin_routes import admin_bp
 from routes.api_routes import api_bp
 
-# Load environment variables
-load_dotenv()
+# Load environment variables from the project root explicitly (handles service cwd differences)
+load_dotenv(dotenv_path=Path(__file__).resolve().parent / '.env')
 
 # Ensure nltk punkt tokenizer is available
 try:
