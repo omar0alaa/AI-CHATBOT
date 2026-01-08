@@ -9,13 +9,13 @@ from flask_session import Session
 from services.logging_service import setup_logger
 from services.database_service import init_db
 
-# Import route blueprints
+# Load environment variables from the project root explicitly (handles service cwd differences)
+load_dotenv(dotenv_path=Path(__file__).resolve().parent / '.env')
+
+# Import route blueprints (after env is loaded so config picks up .env values)
 from routes.main_routes import main_bp
 from routes.admin_routes import admin_bp
 from routes.api_routes import api_bp
-
-# Load environment variables from the project root explicitly (handles service cwd differences)
-load_dotenv(dotenv_path=Path(__file__).resolve().parent / '.env')
 
 # Ensure nltk punkt tokenizer is available
 try:
