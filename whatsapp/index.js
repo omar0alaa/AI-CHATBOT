@@ -9,7 +9,7 @@ const {
   useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion,
-} = require('@adiwajshing/baileys');
+} = require('@whiskeysockets/baileys');
 
 // Load env from project root
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
