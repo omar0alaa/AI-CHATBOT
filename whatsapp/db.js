@@ -35,8 +35,7 @@ CREATE TABLE IF NOT EXISTS messages (
   from_me INTEGER DEFAULT 0,
   text TEXT,
   ts INTEGER,
-  key_id TEXT,
-  FOREIGN KEY (jid) REFERENCES chats(jid)
+  key_id TEXT
 );
 `;
 
@@ -87,8 +86,8 @@ function saveMessage({ jid, fromMe, text, ts, keyId, name, isGroup }) {
   const safeTs = ts || Date.now();
   const existing = getChatStmt.get(jid);
   const unreadCount = fromMe ? 0 : ((existing?.unread || 0) + 1);
-  insertMessageStmt.run({ jid, from_me: fromMe ? 1 : 0, text: text || '', ts: safeTs, key_id: keyId || null });
 
+  // Ensure chat row exists before inserting message
   upsertChatStmt.run({
     jid,
     name: name || null,
@@ -97,6 +96,8 @@ function saveMessage({ jid, fromMe, text, ts, keyId, name, isGroup }) {
     last_ts: safeTs,
     unread: unreadCount,
   });
+
+  insertMessageStmt.run({ jid, from_me: fromMe ? 1 : 0, text: text || '', ts: safeTs, key_id: keyId || null });
 }
 
 function listChats(limit = 50, offset = 0) {
