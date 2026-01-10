@@ -80,6 +80,13 @@ function broadcastMessage(account, jid) {
   }
 }
 
+function broadcastQr(account, qr) {
+  const payload = JSON.stringify({ type: 'qr', data: { qr } });
+  for (const res of ensureSseSet(account)) {
+    res.write(`data: ${payload}\n\n`);
+  }
+}
+
 function authPathFor(account) {
   const safe = account.replace(/[^a-zA-Z0-9_-]/g, '_');
   return path.join(AUTH_FOLDER, safe);
@@ -123,6 +130,7 @@ async function ensureWhatsApp(account) {
         logger.error(err, 'Failed to render QR');
       }
       broadcastStatus(account);
+      broadcastQr(account, sess.currentQR);
     }
 
     if (connection === 'close') {
@@ -400,6 +408,11 @@ function startHttpServer() {
       data: { connection: getSession(account)?.connectionState || 'init', deviceName: DEVICE_NAME, lastStatusAt: getSession(account)?.lastStatusAt || Date.now(), hasQR: !!getSession(account)?.currentQR },
     });
     res.write(`data: ${initial}\n\n`);
+    const currentQR = getSession(account)?.currentQR;
+    if (currentQR) {
+      const qrMsg = JSON.stringify({ type: 'qr', data: { qr: currentQR } });
+      res.write(`data: ${qrMsg}\n\n`);
+    }
   });
 
   app.listen(ADMIN_PORT, () => {

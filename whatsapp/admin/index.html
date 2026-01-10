@@ -113,296 +113,106 @@
     </div>
   </div>
 
-    document.getElementById('show-qr').onclick = async () => {
-      const qr = await fetchJson('/api/qr');
-      const modal = document.getElementById('qr-modal');
-      const container = document.getElementById('qr-container');
-      if (qr && qr.qr) {
-        container.innerHTML = `<img src="${qr.qr}" alt="QR" />`;
-      </div>
+  <script>
+    const apiBase = '';
+    let authUser = null;
+    let eventSource = null;
+    const state = { chats: [], activeJid: null, lastMessages: {} };
 
-      <script>
-        const apiBase = '';
-        let authUser = null;
-        const state = { chats: [], activeJid: null, lastMessages: {} };
-        const chatListEl = document.getElementById('chat-list');
-        const threadEl = document.getElementById('thread');
-        const emptyStateEl = document.getElementById('empty-state');
-        const composerInput = document.getElementById('composer-input');
-        const sendBtn = document.getElementById('send');
-        const muteBtn = document.getElementById('mute-btn');
-        const statusDot = document.getElementById('status-dot');
-        const statusText = document.getElementById('status-text');
-        const userChip = document.getElementById('user-chip');
-        const loginOverlay = document.getElementById('login-overlay');
-        const loginBtn = document.getElementById('login-btn');
-        const loginDemo = document.getElementById('login-demo');
-        const signupBtn = document.getElementById('signup-btn');
-        const loginError = document.getElementById('login-error');
-        const loginUsername = document.getElementById('login-username');
-        const loginPassword = document.getElementById('login-password');
-        const showQrBtn = document.getElementById('show-qr');
-        const createUserBtn = document.getElementById('create-user');
-        const qrModal = document.getElementById('qr-modal');
-        const qrContainer = document.getElementById('qr-container');
-        const closeQr = document.getElementById('close-qr');
-        const logoutBtn = document.getElementById('logout');
-        const unlinkBtn = document.getElementById('unlink');
-        const searchInput = document.getElementById('search');
+    const chatListEl = document.getElementById('chat-list');
+    const threadEl = document.getElementById('thread');
+    const emptyStateEl = document.getElementById('empty-state');
+    const composerInput = document.getElementById('composer-input');
+    const sendBtn = document.getElementById('send');
+    const muteBtn = document.getElementById('mute-btn');
+    const statusDot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+    const userChip = document.getElementById('user-chip');
+    const loginOverlay = document.getElementById('login-overlay');
+    const loginBtn = document.getElementById('login-btn');
+    const loginDemo = document.getElementById('login-demo');
+    const signupBtn = document.getElementById('signup-btn');
+    const loginError = document.getElementById('login-error');
+    const loginUsername = document.getElementById('login-username');
+    const loginPassword = document.getElementById('login-password');
+    const showQrBtn = document.getElementById('show-qr');
+    const createUserBtn = document.getElementById('create-user');
+    const qrModal = document.getElementById('qr-modal');
+    const qrContainer = document.getElementById('qr-container');
+    const closeQr = document.getElementById('close-qr');
+    const logoutBtn = document.getElementById('logout');
+    const unlinkBtn = document.getElementById('unlink');
+    const searchInput = document.getElementById('search');
 
-        function fetchJson(path, opts = {}) {
-          return fetch(apiBase + path, { credentials: 'include', headers: { 'Content-Type': 'application/json' }, ...opts }).then(r => {
-            if (!r.ok) throw new Error('Request failed');
-            return r.json();
-          });
-        }
-
-        function setStatus(status, label) {
-          statusDot.classList.toggle('online', status === 'online');
-          statusDot.classList.toggle('offline', status !== 'online');
-          statusText.textContent = label || (status === 'online' ? 'Online' : 'Offline');
-        }
-
-        function renderChats(list) {
-          const q = searchInput.value.trim().toLowerCase();
-          chatListEl.innerHTML = '';
-          list
-            .filter(c => !q || c.name.toLowerCase().includes(q) || c.jid.toLowerCase().includes(q))
-            .forEach(chat => {
-              const li = document.createElement('li');
-              li.className = 'chat-item' + (state.activeJid === chat.jid ? ' active' : '');
-              li.innerHTML = `
-                <div class="chat-name">${chat.name || chat.jid}</div>
-                <div class="chat-ts">${new Date(chat.lastMessageAt || chat.updatedAt).toLocaleString()}</div>
-                <div class="chat-preview">${chat.lastMessage || ''}</div>
-              `;
-              li.onclick = () => openChat(chat.jid);
-              chatListEl.appendChild(li);
-            });
-        }
-
-        function renderMessages(messages) {
-          threadEl.innerHTML = '';
-          messages.forEach(m => {
-            const div = document.createElement('div');
-            div.className = 'msg ' + (m.fromMe ? 'out' : 'in');
-            div.innerHTML = `<div>${m.text || ''}</div><div class="msg-meta">${new Date(m.timestamp).toLocaleString()}</div>`;
-            threadEl.appendChild(div);
-          });
-          if (!messages.length) {
-            threadEl.appendChild(emptyStateEl);
-            emptyStateEl.style.display = 'block';
-          } else {
-            emptyStateEl.style.display = 'none';
-          }
-          threadEl.scrollTop = threadEl.scrollHeight;
-        }
-
-        function openChat(jid) {
-          state.activeJid = jid;
-          renderChats(state.chats);
-          composerInput.disabled = false;
-          sendBtn.disabled = false;
-          muteBtn.disabled = false;
-          fetchJson(`/api/messages?jid=${encodeURIComponent(jid)}`).then(res => {
-            renderMessages(res.messages || []);
-            state.lastMessages[jid] = res.messages || [];
-          }).catch(console.error);
-        }
-
-        function loadChats() {
-          fetchJson('/api/chats').then(res => {
-            state.chats = res.chats || [];
-            renderChats(state.chats);
-          }).catch(console.error);
-        }
-
-        function loadStatus() {
-          fetchJson('/api/status').then(res => {
-            setStatus(res.status, res.label);
-          }).catch(() => setStatus('offline'));
-        }
-
-        function connectEvents() {
-          const es = new EventSource(apiBase + '/api/events', { withCredentials: true });
-          es.onmessage = evt => {
-            const data = JSON.parse(evt.data);
-            if (data.type === 'status') setStatus(data.status, data.label);
-            if (data.type === 'qr') showQr(data.qr);
-            if (data.type === 'chats') { state.chats = data.chats; renderChats(state.chats); }
-            if (data.type === 'message' && state.activeJid === data.jid) {
-              const msgs = state.lastMessages[data.jid] || [];
-              msgs.push(data.message);
-              renderMessages(msgs);
-              state.lastMessages[data.jid] = msgs;
-            }
-          };
-          es.onerror = () => setStatus('offline');
-        }
-
-        function showQr(dataUrl) {
-          qrContainer.innerHTML = `<img src="${dataUrl}" alt="QR Code" />`;
-          qrModal.style.display = 'flex';
-        }
-
-        closeQr.onclick = () => { qrModal.style.display = 'none'; };
-        qrModal.onclick = e => { if (e.target === qrModal) qrModal.style.display = 'none'; };
-
-        showQrBtn.onclick = () => {
-          qrContainer.textContent = 'Loading...';
-          qrModal.style.display = 'flex';
-          fetchJson('/api/qr').then(res => showQr(res.qr)).catch(() => { qrContainer.textContent = 'Failed to load QR'; });
-        };
-
-        unlinkBtn.onclick = () => {
-          fetchJson('/api/unlink', { method: 'POST' }).then(() => {
-            setStatus('offline', 'Unlinked');
-            qrModal.style.display = 'none';
-          });
-        };
-
-        sendBtn.onclick = () => {
-          if (!state.activeJid) return;
-          const text = composerInput.value.trim();
-          if (!text) return;
-          composerInput.value = '';
-          fetchJson('/api/send', { method: 'POST', body: JSON.stringify({ jid: state.activeJid, message: text }) });
-        };
-
-        muteBtn.onclick = () => {
-          if (!state.activeJid) return;
-          fetchJson('/api/mute', { method: 'POST', body: JSON.stringify({ jid: state.activeJid }) }).then(loadChats);
-        };
-
-        logoutBtn.onclick = () => {
-          fetchJson('/api/logout', { method: 'POST' }).then(() => {
-            authUser = null;
-            userChip.textContent = 'Guest';
-            loginOverlay.style.display = 'flex';
-          });
-        };
-
-        loginDemo.onclick = () => {
-          loginUsername.value = 'admin';
-          loginPassword.value = 'admin';
-        };
-
-        loginBtn.onclick = () => {
-          const username = loginUsername.value.trim();
-          const password = loginPassword.value.trim();
-          loginError.textContent = '';
-          if (!username || !password) { loginError.textContent = 'Enter username and password'; return; }
-          fetchJson('/api/login', { method: 'POST', body: JSON.stringify({ username, password }) })
-            .then(res => {
-              authUser = res.user;
-              userChip.textContent = authUser.username;
-              loginOverlay.style.display = 'none';
-              loadChats();
-              loadStatus();
-              connectEvents();
-            })
-            .catch(() => { loginError.textContent = 'Invalid credentials'; });
-        };
-
-        signupBtn.onclick = () => {
-          const username = loginUsername.value.trim();
-          const password = loginPassword.value.trim();
-          loginError.textContent = '';
-          if (!username || !password) { loginError.textContent = 'Enter username and password'; return; }
-          fetchJson('/api/users', { method: 'POST', body: JSON.stringify({ username, password }) })
-            .then(() => { loginError.textContent = 'Account created. Please sign in.'; })
-            .catch(err => { loginError.textContent = err.message || 'Signup failed (maybe user exists)'; });
-        };
-
-        createUserBtn.onclick = () => {
-          const username = prompt('New username');
-          if (!username) return;
-          const password = prompt('Password for ' + username);
-          if (!password) return;
-          fetchJson('/api/users', { method: 'POST', body: JSON.stringify({ username, password }) })
-            .then(() => alert('User created'))
-            .catch(() => alert('Failed to create user (maybe exists or unauthorized)'));
-        };
-
-        searchInput.oninput = () => renderChats(state.chats);
-
-        function checkSession() {
-          fetchJson('/api/me').then(res => {
-            if (res.user) {
-              authUser = res.user;
-              userChip.textContent = authUser.username;
-              loginOverlay.style.display = 'none';
-              loadChats();
-              loadStatus();
-              connectEvents();
-            } else {
-              loginOverlay.style.display = 'flex';
-            }
-          }).catch(() => { loginOverlay.style.display = 'flex'; });
-        }
-
-        checkSession();
-      </script>
-
-    sendBtn.onclick = async () => {
-      const text = composerInput.value.trim();
-      if (!text || !state.activeJid) return;
-      const payload = { text };
-      const res = await fetchJson(`/api/chats/${encodeURIComponent(state.activeJid)}/send`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+    async function fetchJson(path, opts = {}) {
+      const res = await fetch(apiBase + path, {
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
+        ...opts,
       });
-      if (res && res.ok) {
-        composerInput.value = '';
-        await loadMessages(state.activeJid);
-      } else {
-        alert('Failed to send');
+      if (!res.ok) {
+        let msg = 'Request failed';
+        try { const body = await res.json(); msg = body.error || msg; } catch (e) { /* ignore */ }
+        const err = new Error(msg);
+        err.status = res.status;
+        throw err;
       }
-    };
-
-    muteBtn.onclick = async () => {
-      if (!state.activeJid) return;
-      const chat = state.chats.find((c) => c.jid === state.activeJid);
-      const nextMuted = !(chat && chat.muted);
-      const res = await fetchJson(`/api/chats/${encodeURIComponent(state.activeJid)}/mute`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ muted: nextMuted }),
-      });
-      if (res && res.ok) {
-        await loadChats();
-        updateMuteButton();
-      } else {
-        alert('Failed to update mute');
-      }
-    };
-
-    function fetchJson(path, options = {}) {
-      const headers = options.headers || {};
-      return fetch(apiBase + path, { ...options, headers, credentials: 'include' }).then(async (r) => {
-        if (!r.ok) return { ok: false, status: r.status };
-        try { return await r.json(); } catch (e) { return { ok: true }; }
-      }).catch((e) => { console.error(e); return null; });
+      try { return await res.json(); } catch (e) { return {}; }
     }
 
-    function renderChats(filter = '') {
+    function setStatus(connection) {
+      const online = connection === 'open' || connection === 'online';
+      statusDot.classList.toggle('online', online);
+      statusDot.classList.toggle('offline', !online);
+      statusText.textContent = online ? 'Online' : connection || 'Offline';
+    }
+
+    function renderChats() {
+      const q = searchInput.value.trim().toLowerCase();
       chatListEl.innerHTML = '';
       state.chats
-        .filter((c) => (c.name || c.jid).toLowerCase().includes(filter))
+        .filter((c) => !q || (c.name || '').toLowerCase().includes(q) || c.jid.toLowerCase().includes(q))
         .forEach((chat) => {
           const li = document.createElement('li');
-          li.className = 'chat-item' + (chat.jid === state.activeJid ? ' active' : '');
+          li.className = 'chat-item' + (state.activeJid === chat.jid ? ' active' : '');
           li.onclick = () => selectChat(chat.jid);
           li.innerHTML = `
-            <div>
-              <div class="chat-name">${chat.name || chat.jid}${chat.muted ? ' (muted)' : ''}</div>
-              <div class="chat-preview">${chat.lastMessage || ''}</div>
-            </div>
-            <div class="chat-ts">${chat.lastTs ? new Date(chat.lastTs).toLocaleTimeString() : ''}</div>
+            <div class="chat-name">${chat.name || chat.jid}${chat.muted ? ' (muted)' : ''}</div>
+            <div class="chat-ts">${chat.lastTs ? new Date(chat.lastTs).toLocaleString() : ''}</div>
+            <div class="chat-preview">${chat.lastMessage || ''}</div>
           `;
           chatListEl.appendChild(li);
         });
+    }
+
+    function renderMessages(messages) {
+      threadEl.innerHTML = '';
+      if (!messages.length) {
+        emptyStateEl.style.display = 'block';
+        threadEl.appendChild(emptyStateEl);
+        return;
+      }
+      emptyStateEl.style.display = 'none';
+      messages.forEach((m) => {
+        const div = document.createElement('div');
+        div.className = 'msg ' + (m.fromMe ? 'out' : 'in');
+        div.innerHTML = `<div>${m.text || ''}</div><div class="msg-meta">${new Date(m.ts || m.timestamp).toLocaleString()}</div>`;
+        threadEl.appendChild(div);
+      });
+      threadEl.scrollTop = threadEl.scrollHeight;
+    }
+
+    async function loadChats() {
+      const res = await fetchJson('/api/chats');
+      state.chats = res.chats || [];
+      renderChats();
+    }
+
+    async function loadMessages(jid) {
+      const res = await fetchJson(`/api/chats/${encodeURIComponent(jid)}/messages?limit=100`);
+      const messages = (res.messages || []).slice().reverse();
+      state.lastMessages[jid] = messages;
+      renderMessages(messages);
     }
 
     async function selectChat(jid) {
@@ -410,152 +220,174 @@
       composerInput.disabled = false;
       sendBtn.disabled = false;
       muteBtn.disabled = false;
-      renderChats(document.getElementById('search').value.toLowerCase());
+      renderChats();
       await loadMessages(jid);
       updateMuteButton();
     }
 
-    async function loadChats() {
-      const data = await fetchJson('/api/chats');
-      if (data && Array.isArray(data.chats)) {
-        state.chats = data.chats;
-        renderChats(document.getElementById('search').value.toLowerCase());
-        updateMuteButton();
-      }
+    function updateMuteButton() {
+      const chat = state.chats.find((c) => c.jid === state.activeJid);
+      const muted = chat?.muted;
+      muteBtn.textContent = muted ? 'Unmute AI' : 'Mute AI';
     }
 
-    async function loadMessages(jid) {
-      const data = await fetchJson(`/api/chats/${encodeURIComponent(jid)}/messages?limit=100`);
-      if (!data || !Array.isArray(data.messages)) return;
-      threadEl.innerHTML = '';
-      if (data.messages.length === 0) {
-        emptyStateEl.textContent = 'No messages yet';
-        threadEl.appendChild(emptyStateEl);
-        return;
-      }
-      data.messages.slice().reverse().forEach((m) => {
-        const div = document.createElement('div');
-        div.className = `msg ${m.fromMe ? 'out' : 'in'}`;
-        div.innerHTML = `<div>${escapeHtml(m.text || '')}</div><div class="msg-meta">${new Date(m.ts).toLocaleString()}</div>`;
-        threadEl.appendChild(div);
+    async function sendMessage() {
+      if (!state.activeJid) return;
+      const text = composerInput.value.trim();
+      if (!text) return;
+      composerInput.value = '';
+      await fetchJson(`/api/chats/${encodeURIComponent(state.activeJid)}/send`, {
+        method: 'POST',
+        body: JSON.stringify({ text }),
       });
-      threadEl.scrollTop = threadEl.scrollHeight;
+      await loadMessages(state.activeJid);
     }
 
-    async function loadStatus() {
-      const data = await fetchJson('/api/status');
-      if (!data) return;
-      const online = data.connection === 'open';
-      statusDot.className = 'dot ' + (online ? 'online' : 'offline');
-      statusText.textContent = `${data.connection || 'unknown'}${data.deviceName ? ' • ' + data.deviceName : ''}`;
+    async function toggleMute() {
+      if (!state.activeJid) return;
+      const chat = state.chats.find((c) => c.jid === state.activeJid);
+      const nextMuted = !(chat && chat.muted);
+      await fetchJson(`/api/chats/${encodeURIComponent(state.activeJid)}/mute`, {
+        method: 'POST',
+        body: JSON.stringify({ muted: nextMuted }),
+      });
+      await loadChats();
+      updateMuteButton();
+    }
+
+    function showQr(dataUrl) {
+      qrContainer.innerHTML = dataUrl ? `<img src="${dataUrl}" alt="QR Code" />` : 'No QR available';
+      qrModal.style.display = 'flex';
+    }
+
+    function hookEvents() {
+      sendBtn.onclick = sendMessage;
+      muteBtn.onclick = toggleMute;
+      showQrBtn.onclick = async () => {
+        qrContainer.textContent = 'Loading...';
+        qrModal.style.display = 'flex';
+        try {
+          const res = await fetchJson('/api/qr');
+          showQr(res.qr);
+        } catch (e) {
+          qrContainer.textContent = 'Failed to load QR';
+        }
+      };
+      closeQr.onclick = () => { qrModal.style.display = 'none'; };
+      qrModal.onclick = (e) => { if (e.target === qrModal) qrModal.style.display = 'none'; };
+      unlinkBtn.onclick = async () => {
+        await fetchJson('/api/unlink', { method: 'POST' });
+        setStatus('offline');
+        qrModal.style.display = 'none';
+      };
+      logoutBtn.onclick = async () => {
+        await fetchJson('/api/logout', { method: 'POST' });
+        authUser = null;
+        userChip.textContent = 'Guest';
+        loginOverlay.style.display = 'flex';
+        eventSource?.close();
+      };
+      loginDemo.onclick = () => {
+        loginUsername.value = 'admin';
+        loginPassword.value = 'admin';
+      };
+      loginBtn.onclick = async () => {
+        loginError.textContent = '';
+        const username = loginUsername.value.trim();
+        const password = loginPassword.value.trim();
+        if (!username || !password) { loginError.textContent = 'Enter username and password'; return; }
+        try {
+          const res = await fetchJson('/api/login', { method: 'POST', body: JSON.stringify({ username, password }) });
+          authUser = res.user;
+          userChip.textContent = authUser.username;
+          loginOverlay.style.display = 'none';
+          await bootstrap();
+        } catch (e) {
+          loginError.textContent = 'Invalid credentials';
+        }
+      };
+      signupBtn.onclick = async () => {
+        loginError.textContent = '';
+        const username = loginUsername.value.trim();
+        const password = loginPassword.value.trim();
+        if (!username || !password) { loginError.textContent = 'Enter username and password'; return; }
+        try {
+          await fetchJson('/api/users', { method: 'POST', body: JSON.stringify({ username, password }) });
+          loginError.textContent = 'Account created. Please sign in.';
+        } catch (e) {
+          loginError.textContent = e.message || 'Signup failed (maybe user exists)';
+        }
+      };
+      createUserBtn.onclick = async () => {
+        const username = prompt('New username');
+        if (!username) return;
+        const password = prompt('Password for ' + username);
+        if (!password) return;
+        try {
+          await fetchJson('/api/users', { method: 'POST', body: JSON.stringify({ username, password }) });
+          alert('User created');
+        } catch (e) {
+          alert('Failed to create user (maybe exists or unauthorized)');
+        }
+      };
+      searchInput.oninput = () => renderChats();
     }
 
     function connectEvents() {
-      if (!window.EventSource) return;
-      const es = new EventSource('/api/events');
-      es.onmessage = (ev) => {
+      eventSource?.close();
+      eventSource = new EventSource(apiBase + '/api/events', { withCredentials: true });
+      eventSource.onmessage = async (evt) => {
         try {
-          const payload = JSON.parse(ev.data);
+          const payload = JSON.parse(evt.data);
           if (payload.type === 'status') {
-            statusDot.className = 'dot ' + (payload.data.connection === 'open' ? 'online' : 'offline');
-            statusText.textContent = `${payload.data.connection}${payload.data.deviceName ? ' • ' + payload.data.deviceName : ''}`;
-          }
-          if (payload.type === 'message') {
-            loadChats();
-            if (payload.data.jid === state.activeJid) {
-              loadMessages(state.activeJid);
+            setStatus(payload.data?.connection);
+          } else if (payload.type === 'qr') {
+            showQr(payload.data?.qr);
+          } else if (payload.type === 'message') {
+            const jid = payload.data?.jid;
+            if (jid) {
+              await loadChats();
+              if (state.activeJid === jid) {
+                await loadMessages(jid);
+              }
             }
           }
-        } catch (e) { console.error(e); }
-      };
-      es.onerror = () => es.close();
-    }
-
-    function updateMuteButton() {
-      const chat = state.chats.find((c) => c.jid === state.activeJid);
-      muteBtn.textContent = chat?.muted ? 'Unmute AI' : 'Mute AI';
-    }
-
-    function escapeHtml(str) {
-      const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
-      return str.replace(/[&<>"']/g, (c) => map[c] || c);
-    }
-
-    function showLogin(message = '') {
-      loginOverlay.style.display = 'flex';
-      loginError.textContent = message;
-      loginPassword.value = '';
-      loginUsername.focus();
-    }
-
-    function hideLogin() {
-      loginOverlay.style.display = 'none';
-      loginError.textContent = '';
-    }
-
-    async function ensureSession() {
-      const me = await fetchJson('/api/me');
-      if (me && me.user) {
-        authUser = me.user;
-        userChip.textContent = me.user.username;
-        hideLogin();
-        loadChats();
-        loadStatus();
-        connectEvents();
-      } else {
-        const exists = await fetchJson('/api/users/exists');
-        if (exists && exists.hasUsers === false) {
-          loginError.textContent = 'Create the first admin account';
+        } catch (err) {
+          console.error('Event parse failed', err);
         }
-        showLogin();
-      }
+      };
+      eventSource.onerror = () => setStatus('offline');
     }
 
-    loginBtn.onclick = async () => {
-      const username = loginUsername.value.trim();
-      const password = loginPassword.value;
-      const res = await fetchJson('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-      });
-      if (res && res.ok) {
-        authUser = res.user;
-        userChip.textContent = res.user.username;
-        hideLogin();
-        loadChats();
-        loadStatus();
-        connectEvents();
-      } else {
-        loginError.textContent = 'Invalid credentials';
+    async function bootstrap() {
+      await loadChats();
+      try {
+        const s = await fetchJson('/api/status');
+        setStatus(s.connection || s.status);
+      } catch (e) {
+        setStatus('offline');
       }
-    };
+      connectEvents();
+    }
 
-    signupBtn.onclick = async () => {
-      const username = loginUsername.value.trim();
-      const password = loginPassword.value;
-      const res = await fetchJson('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-      });
-      if (res && res.ok) {
-        loginError.textContent = 'Account created, please sign in';
-      } else if (res && res.status === 409) {
-        loginError.textContent = 'User already exists';
-      } else if (res && res.status === 401) {
-        loginError.textContent = 'Login required to create users';
-      } else {
-        loginError.textContent = 'Failed to create account';
+    async function checkSession() {
+      try {
+        const res = await fetchJson('/api/me');
+        if (res.user) {
+          authUser = res.user;
+          userChip.textContent = authUser.username;
+          loginOverlay.style.display = 'none';
+          await bootstrap();
+          return;
+        }
+      } catch (e) {
+        /* not logged in */
       }
-    };
+      loginOverlay.style.display = 'flex';
+    }
 
-    loginDemo.onclick = () => {
-      loginUsername.value = 'admin';
-      loginPassword.value = 'admin';
-    };
-
-    ensureSession();
+    hookEvents();
+    checkSession();
   </script>
 </body>
 </html>
