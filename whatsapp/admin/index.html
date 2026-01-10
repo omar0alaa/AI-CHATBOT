@@ -80,6 +80,7 @@
     </div>
     <div class="actions">
       <div id="user-chip" style="font-weight:700; background:rgba(255,255,255,0.14); padding:8px 12px; border-radius:10px;">Guest</div>
+      <button id="create-user" class="secondary">Add User</button>
       <button id="show-qr">Show QR</button>
       <button id="unlink" class="secondary">Unlink / Relink</button>
       <button id="logout" class="danger">Logout</button>
@@ -141,6 +142,7 @@
         const loginUsername = document.getElementById('login-username');
         const loginPassword = document.getElementById('login-password');
         const showQrBtn = document.getElementById('show-qr');
+        const createUserBtn = document.getElementById('create-user');
         const qrModal = document.getElementById('qr-modal');
         const qrContainer = document.getElementById('qr-container');
         const closeQr = document.getElementById('close-qr');
@@ -307,9 +309,19 @@
           const password = loginPassword.value.trim();
           loginError.textContent = '';
           if (!username || !password) { loginError.textContent = 'Enter username and password'; return; }
-          fetchJson('/api/signup', { method: 'POST', body: JSON.stringify({ username, password }) })
+          fetchJson('/api/users', { method: 'POST', body: JSON.stringify({ username, password }) })
             .then(() => { loginError.textContent = 'Account created. Please sign in.'; })
-            .catch(() => { loginError.textContent = 'Signup failed (maybe user exists)'; });
+            .catch(err => { loginError.textContent = err.message || 'Signup failed (maybe user exists)'; });
+        };
+
+        createUserBtn.onclick = () => {
+          const username = prompt('New username');
+          if (!username) return;
+          const password = prompt('Password for ' + username);
+          if (!password) return;
+          fetchJson('/api/users', { method: 'POST', body: JSON.stringify({ username, password }) })
+            .then(() => alert('User created'))
+            .catch(() => alert('Failed to create user (maybe exists or unauthorized)'));
         };
 
         searchInput.oninput = () => renderChats(state.chats);
