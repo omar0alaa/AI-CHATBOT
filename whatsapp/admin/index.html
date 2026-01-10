@@ -66,6 +66,7 @@
       </div>
       <div class="composer">
         <textarea id="composer-input" placeholder="Type a reply..." disabled></textarea>
+        <button id="mute-btn" class="secondary" disabled>Mute AI</button>
         <button id="send" disabled>Send</button>
       </div>
     </section>
@@ -89,6 +90,7 @@
     const emptyStateEl = document.getElementById('empty-state');
     const composerInput = document.getElementById('composer-input');
     const sendBtn = document.getElementById('send');
+    const muteBtn = document.getElementById('mute-btn');
     const statusDot = document.getElementById('status-dot');
     const statusText = document.getElementById('status-text');
     const tokenInput = document.getElementById('token-input');
@@ -144,6 +146,23 @@
       }
     };
 
+    muteBtn.onclick = async () => {
+      if (!state.activeJid) return;
+      const chat = state.chats.find((c) => c.jid === state.activeJid);
+      const nextMuted = !(chat && chat.muted);
+      const res = await fetchJson(`/api/chats/${encodeURIComponent(state.activeJid)}/mute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ muted: nextMuted }),
+      });
+      if (res && res.ok) {
+        await loadChats();
+        updateMuteButton();
+      } else {
+        alert('Failed to update mute');
+      }
+    };
+
     function fetchJson(path, options = {}) {
       const headers = options.headers || {};
       if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
@@ -163,7 +182,7 @@
           li.onclick = () => selectChat(chat.jid);
           li.innerHTML = `
             <div>
-              <div class="chat-name">${chat.name || chat.jid}</div>
+              <div class="chat-name">${chat.name || chat.jid}${chat.muted ? ' (muted)' : ''}</div>
               <div class="chat-preview">${chat.lastMessage || ''}</div>
             </div>
             <div class="chat-ts">${chat.lastTs ? new Date(chat.lastTs).toLocaleTimeString() : ''}</div>
@@ -176,8 +195,10 @@
       state.activeJid = jid;
       composerInput.disabled = false;
       sendBtn.disabled = false;
+      muteBtn.disabled = false;
       renderChats(document.getElementById('search').value.toLowerCase());
       await loadMessages(jid);
+      updateMuteButton();
     }
 
     async function loadChats() {
@@ -185,6 +206,7 @@
       if (data && Array.isArray(data.chats)) {
         state.chats = data.chats;
         renderChats(document.getElementById('search').value.toLowerCase());
+        updateMuteButton();
       }
     }
 
@@ -233,6 +255,11 @@
         } catch (e) { console.error(e); }
       };
       es.onerror = () => es.close();
+    }
+
+    function updateMuteButton() {
+      const chat = state.chats.find((c) => c.jid === state.activeJid);
+      muteBtn.textContent = chat?.muted ? 'Unmute AI' : 'Mute AI';
     }
 
     function escapeHtml(str) {

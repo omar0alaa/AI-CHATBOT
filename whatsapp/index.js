@@ -167,6 +167,12 @@ async function handleIncoming(sock, msg) {
   const text = extractText(msg);
   if (!text) return;
 
+  const chatMeta = db.getChat(remoteJid);
+  if (chatMeta?.muted) {
+    logger.info({ from: remoteJid }, 'Chat muted; skipping AI reply');
+    return;
+  }
+
   logger.info({ from: remoteJid, text }, 'Incoming message');
 
   try {
@@ -179,6 +185,16 @@ async function handleIncoming(sock, msg) {
     const reply = response?.data?.message || 'Sorry, I could not get a reply right now.';
 
     await sock.sendMessage(remoteJid, { text: reply }, { quoted: msg });
+    db.saveMessage({
+      jid: remoteJid,
+      fromMe: true,
+      text: reply,
+      ts: Date.now(),
+      keyId: null,
+      name: DEVICE_NAME,
+      isGroup: remoteJid.endsWith('@g.us'),
+    });
+    broadcastMessage(remoteJid);
   } catch (err) {
     logger.error(err, 'Chatbot request failed');
     await sock.sendMessage(
@@ -235,6 +251,12 @@ function startHttpServer() {
     res.json({ chats: db.listChats(limit, offset) });
   });
 
+  app.post('/api/chats/:jid/mute', requireAuth, (req, res) => {
+    const muted = !!req.body?.muted;
+    db.setMuted(req.params.jid, muted);
+    res.json({ ok: true, muted });
+  });
+
   app.get('/api/chats/:jid/messages', requireAuth, (req, res) => {
     const limit = Number(req.query.limit || 50);
     const offset = Number(req.query.offset || 0);
@@ -247,6 +269,16 @@ function startHttpServer() {
     if (!waSock) return res.status(503).json({ error: 'WhatsApp socket not ready' });
     try {
       await waSock.sendMessage(req.params.jid, { text });
+      db.saveMessage({
+        jid: req.params.jid,
+        fromMe: true,
+        text,
+        ts: Date.now(),
+        keyId: null,
+        name: 'Admin',
+        isGroup: req.params.jid.endsWith('@g.us'),
+      });
+      broadcastMessage(req.params.jid);
       res.json({ ok: true });
     } catch (err) {
       logger.error(err, 'Failed to send admin message');
