@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WhatsApp Admin Console</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Arial, sans-serif; background: #f4f6f9; color: #1f2937; }
+    header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: #0f172a; color: #fff; }
+    .status { display: flex; align-items: center; gap: 8px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: #9ca3af; }
+    .dot.online { background: #10b981; }
+    .dot.offline { background: #ef4444; }
+    .actions { display: flex; gap: 8px; align-items: center; }
+    button { cursor: pointer; padding: 8px 12px; border: none; border-radius: 6px; background: #2563eb; color: #fff; font-weight: 600; }
+    button.secondary { background: #111827; color: #e5e7eb; }
+    button.danger { background: #dc2626; }
+    main { display: grid; grid-template-columns: 280px 1fr; height: calc(100vh - 56px); }
+    .sidebar { border-right: 1px solid #e5e7eb; background: #fff; overflow: auto; }
+    .search { padding: 10px; border-bottom: 1px solid #e5e7eb; }
+    .search input { width: 100%; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 6px; }
+    .chat-list { list-style: none; margin: 0; padding: 0; }
+    .chat-item { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; cursor: pointer; display: grid; grid-template-columns: 1fr auto; gap: 6px; }
+    .chat-item:hover { background: #f8fafc; }
+    .chat-item.active { background: #e0f2fe; }
+    .chat-name { font-weight: 700; }
+    .chat-preview { color: #6b7280; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .chat-ts { color: #9ca3af; font-size: 11px; }
+    .content { display: flex; flex-direction: column; height: 100%; }
+    .thread { flex: 1; overflow: auto; padding: 12px 16px; background: #f8fafc; }
+    .msg { max-width: 70%; padding: 10px 12px; border-radius: 10px; margin: 6px 0; white-space: pre-wrap; word-break: break-word; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .msg.in { background: #fff; align-self: flex-start; }
+    .msg.out { background: #2563eb; color: #fff; align-self: flex-end; }
+    .msg-meta { font-size: 11px; color: #9ca3af; margin-top: 4px; }
+    .composer { display: flex; gap: 8px; padding: 12px; border-top: 1px solid #e5e7eb; background: #fff; }
+    .composer textarea { flex: 1; resize: none; min-height: 44px; padding: 10px; border-radius: 8px; border: 1px solid #d1d5db; }
+    .token { width: 220px; padding: 6px 8px; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #e5e7eb; }
+    .qr-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: none; align-items: center; justify-content: center; }
+    .qr-card { background: #fff; padding: 20px; border-radius: 12px; width: 320px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+    .qr-card img { width: 280px; }
+    .empty { color: #94a3b8; text-align: center; padding: 20px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="status">
+      <div id="status-dot" class="dot offline"></div>
+      <div id="status-text">Offline</div>
+    </div>
+    <div class="actions">
+      <input id="token-input" class="token" placeholder="Bearer token" />
+      <button id="save-token" class="secondary">Save Token</button>
+      <button id="show-qr">Show QR</button>
+      <button id="unlink" class="danger">Unlink / Relink</button>
+    </div>
+  </header>
+  <main>
+    <aside class="sidebar">
+      <div class="search"><input id="search" placeholder="Search chats" /></div>
+      <ul id="chat-list" class="chat-list"></ul>
+    </aside>
+    <section class="content">
+      <div id="thread" class="thread">
+        <div id="empty-state" class="empty">Select a chat to view messages</div>
+      </div>
+      <div class="composer">
+        <textarea id="composer-input" placeholder="Type a reply..." disabled></textarea>
+        <button id="send" disabled>Send</button>
+      </div>
+    </section>
+  </main>
+
+  <div id="qr-modal" class="qr-modal">
+    <div class="qr-card">
+      <h3>Scan to Link WhatsApp</h3>
+      <div id="qr-container">Loading...</div>
+      <p style="color:#6b7280; font-size:12px;">Refresh if it expires.</p>
+      <button id="close-qr" class="secondary" style="width:100%; margin-top:8px;">Close</button>
+    </div>
+  </div>
+
+  <script>
+    const apiBase = '';
+    let authToken = localStorage.getItem('wa_admin_token') || '';
+    const state = { chats: [], activeJid: null, lastMessages: {} };
+    const chatListEl = document.getElementById('chat-list');
+    const threadEl = document.getElementById('thread');
+    const emptyStateEl = document.getElementById('empty-state');
+    const composerInput = document.getElementById('composer-input');
+    const sendBtn = document.getElementById('send');
+    const statusDot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+    const tokenInput = document.getElementById('token-input');
+
+    tokenInput.value = authToken;
+
+    document.getElementById('save-token').onclick = () => {
+      authToken = tokenInput.value.trim();
+      localStorage.setItem('wa_admin_token', authToken);
+      connectEvents();
+      loadChats();
+      loadStatus();
+    };
+
+    document.getElementById('show-qr').onclick = async () => {
+      const qr = await fetchJson('/api/qr');
+      const modal = document.getElementById('qr-modal');
+      const container = document.getElementById('qr-container');
+      if (qr && qr.qr) {
+        container.innerHTML = `<img src="${qr.qr}" alt="QR" />`;
+      } else {
+        container.textContent = 'No QR available';
+      }
+      modal.style.display = 'flex';
+    };
+
+    document.getElementById('close-qr').onclick = () => {
+      document.getElementById('qr-modal').style.display = 'none';
+    };
+
+    document.getElementById('unlink').onclick = async () => {
+      if (!confirm('Unlink current session? This will require re-scanning the QR.')) return;
+      await fetchJson('/api/unlink', { method: 'POST' });
+      loadStatus();
+    };
+
+    document.getElementById('search').oninput = (e) => renderChats(e.target.value.toLowerCase());
+
+    sendBtn.onclick = async () => {
+      const text = composerInput.value.trim();
+      if (!text || !state.activeJid) return;
+      const payload = { text };
+      const res = await fetchJson(`/api/chats/${encodeURIComponent(state.activeJid)}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res && res.ok) {
+        composerInput.value = '';
+        await loadMessages(state.activeJid);
+      } else {
+        alert('Failed to send');
+      }
+    };
+
+    function fetchJson(path, options = {}) {
+      const headers = options.headers || {};
+      if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+      return fetch(apiBase + path, { ...options, headers }).then(async (r) => {
+        if (!r.ok) return { ok: false, status: r.status };
+        try { return await r.json(); } catch (e) { return { ok: true }; }
+      }).catch((e) => { console.error(e); return null; });
+    }
+
+    function renderChats(filter = '') {
+      chatListEl.innerHTML = '';
+      state.chats
+        .filter((c) => (c.name || c.jid).toLowerCase().includes(filter))
+        .forEach((chat) => {
+          const li = document.createElement('li');
+          li.className = 'chat-item' + (chat.jid === state.activeJid ? ' active' : '');
+          li.onclick = () => selectChat(chat.jid);
+          li.innerHTML = `
+            <div>
+              <div class="chat-name">${chat.name || chat.jid}</div>
+              <div class="chat-preview">${chat.lastMessage || ''}</div>
+            </div>
+            <div class="chat-ts">${chat.lastTs ? new Date(chat.lastTs).toLocaleTimeString() : ''}</div>
+          `;
+          chatListEl.appendChild(li);
+        });
+    }
+
+    async function selectChat(jid) {
+      state.activeJid = jid;
+      composerInput.disabled = false;
+      sendBtn.disabled = false;
+      renderChats(document.getElementById('search').value.toLowerCase());
+      await loadMessages(jid);
+    }
+
+    async function loadChats() {
+      const data = await fetchJson('/api/chats');
+      if (data && Array.isArray(data.chats)) {
+        state.chats = data.chats;
+        renderChats(document.getElementById('search').value.toLowerCase());
+      }
+    }
+
+    async function loadMessages(jid) {
+      const data = await fetchJson(`/api/chats/${encodeURIComponent(jid)}/messages?limit=100`);
+      if (!data || !Array.isArray(data.messages)) return;
+      threadEl.innerHTML = '';
+      if (data.messages.length === 0) {
+        emptyStateEl.textContent = 'No messages yet';
+        threadEl.appendChild(emptyStateEl);
+        return;
+      }
+      data.messages.slice().reverse().forEach((m) => {
+        const div = document.createElement('div');
+        div.className = `msg ${m.fromMe ? 'out' : 'in'}`;
+        div.innerHTML = `<div>${escapeHtml(m.text || '')}</div><div class="msg-meta">${new Date(m.ts).toLocaleString()}</div>`;
+        threadEl.appendChild(div);
+      });
+      threadEl.scrollTop = threadEl.scrollHeight;
+    }
+
+    async function loadStatus() {
+      const data = await fetchJson('/api/status');
+      if (!data) return;
+      const online = data.connection === 'open';
+      statusDot.className = 'dot ' + (online ? 'online' : 'offline');
+      statusText.textContent = `${data.connection || 'unknown'}${data.deviceName ? ' • ' + data.deviceName : ''}`;
+    }
+
+    function connectEvents() {
+      if (!window.EventSource || !authToken) return;
+      const es = new EventSource(`/api/events?token=${encodeURIComponent(authToken)}`);
+      es.onmessage = (ev) => {
+        try {
+          const payload = JSON.parse(ev.data);
+          if (payload.type === 'status') {
+            statusDot.className = 'dot ' + (payload.data.connection === 'open' ? 'online' : 'offline');
+            statusText.textContent = `${payload.data.connection}${payload.data.deviceName ? ' • ' + payload.data.deviceName : ''}`;
+          }
+          if (payload.type === 'message') {
+            loadChats();
+            if (payload.data.jid === state.activeJid) {
+              loadMessages(state.activeJid);
+            }
+          }
+        } catch (e) { console.error(e); }
+      };
+      es.onerror = () => es.close();
+    }
+
+    function escapeHtml(str) {
+      const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+      return str.replace(/[&<>"']/g, (c) => map[c] || c);
+    }
+
+    loadChats();
+    loadStatus();
+    connectEvents();
+  </script>
+</body>
+</html>
