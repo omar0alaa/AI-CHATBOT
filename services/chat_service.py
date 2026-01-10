@@ -62,11 +62,11 @@ class ChatService:
     
     def _detect_language(self, user_message, ui_lang):
         #Detect user message language
-        if ui_lang == 'ar':
-            return 'ar'
-        elif ui_lang == 'en':
-            return 'en'
-        else:
+        # if ui_lang == 'ar':
+        #     return 'ar'
+        # elif ui_lang == 'en':
+        #     return 'en'
+        # else:
             try:
                 user_lang = detect(user_message)
                 log_debug(f"Auto-detected language: {user_lang}")
