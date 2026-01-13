@@ -9,6 +9,7 @@ const qrcodeTerm = require('qrcode-terminal');
 const QRCode = require('qrcode');
 const express = require('express');
 const cors = require('cors');
+const session = require('express-session');
 const {
   default: makeWASocket,
   useMultiFileAuthState,
@@ -16,6 +17,7 @@ const {
   fetchLatestBaileysVersion,
 } = require('@whiskeysockets/baileys');
 const db = require('./db');
+const { userStore } = db;
 
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
@@ -26,7 +28,8 @@ const DEVICE_NAME = process.env.WHATSAPP_DEVICE_NAME || 'YouLearnt Bot';
 const LOG_LEVEL = process.env.WHATSAPP_LOG_LEVEL || 'info';
 const REPLY_TIMEOUT_MS = parseInt(process.env.WHATSAPP_API_TIMEOUT || '20000', 10);
 const ADMIN_PORT = parseInt(process.env.WHATSAPP_ADMIN_PORT || '4000', 10);
-const DASH_TOKEN = process.env.WHATSAPP_DASH_TOKEN || '';
+const SESSION_SECRET = process.env.WHATSAPP_SESSION_SECRET || 'change-me-session-secret';
+const SESSION_MAX_AGE = parseInt(process.env.WHATSAPP_SESSION_MAX_AGE || '86400000', 10);
 
 const logger = pino({ level: LOG_LEVEL });
 
@@ -160,6 +163,24 @@ async function captureMessage(msg) {
   broadcastMessage(remoteJid);
 }
 
+function mapFetchedMessage(msg) {
+  const remoteJid = msg.key?.remoteJid || '';
+  if (!remoteJid || remoteJid.endsWith('@status')) return null;
+  const text = extractText(msg);
+  if (!text) return null;
+  const tsSeconds = Number(msg.messageTimestamp || Date.now());
+  const ts = Number.isFinite(tsSeconds) ? tsSeconds * 1000 : Date.now();
+  return {
+    jid: remoteJid,
+    fromMe: !!msg.key?.fromMe,
+    text,
+    ts,
+    keyId: msg.key?.id,
+    name: msg.pushName,
+    isGroup: remoteJid.endsWith('@g.us'),
+  };
+}
+
 async function handleIncoming(sock, msg) {
   const remoteJid = msg.key.remoteJid || '';
   if (remoteJid.endsWith('@status')) return;
@@ -207,63 +228,90 @@ async function handleIncoming(sock, msg) {
   }
 }
 
-function requireAuth(req, res, next) {
-  if (!DASH_TOKEN) {
-    return res.status(403).json({ error: 'WHATSAPP_DASH_TOKEN not set on server' });
-  }
-  const header = req.headers.authorization || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
-  if (token !== DASH_TOKEN) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  next();
-}
-
-function requireAuthQuery(req, res, next) {
-  if (!DASH_TOKEN) {
-    return res.status(403).end();
-  }
-  const token = (req.query.token || '').toString();
-  if (token !== DASH_TOKEN) {
-    return res.status(401).end();
-  }
-  next();
+function requireLogin(req, res, next) {
+  if (req.session && req.session.user) return next();
+  return res.status(401).json({ error: 'Unauthorized' });
 }
 
 function startHttpServer() {
   const app = express();
   app.use(express.json({ limit: '1mb' }));
-  app.use(cors());
+  app.use(cors({ origin: true, credentials: true }));
+  app.use(session({
+    secret: SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: { maxAge: SESSION_MAX_AGE, httpOnly: true },
+  }));
   app.use('/admin', express.static(path.join(__dirname, 'admin')));
 
-  app.get('/api/status', requireAuth, (req, res) => {
+  app.post('/api/login', (req, res) => {
+    const { username, password } = req.body || {};
+    const user = userStore.getUser(username);
+    if (!user || !userStore.verifyPassword(password, user.password_hash)) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    req.session.user = { username };
+    res.json({ ok: true, user: { username } });
+  });
+
+  app.post('/api/logout', (req, res) => {
+    req.session.destroy(() => res.json({ ok: true }));
+  });
+
+  app.get('/api/me', (req, res) => {
+    if (req.session?.user) return res.json({ user: req.session.user });
+    return res.status(401).json({ error: 'Unauthorized' });
+  });
+
+  app.get('/api/users/exists', (req, res) => {
+    res.json({ hasUsers: userStore.hasUsers() });
+  });
+
+  app.post('/api/users', (req, res) => {
+    const { username, password } = req.body || {};
+    if (!username || !password) return res.status(400).json({ error: 'username and password required' });
+    if (userStore.hasUsers() && !req.session?.user) return res.status(401).json({ error: 'Unauthorized' });
+    try {
+      userStore.createUser(username.trim(), password);
+      res.json({ ok: true, user: { username } });
+    } catch (err) {
+      if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+        return res.status(409).json({ error: 'User exists' });
+      }
+      logger.error(err, 'Failed to create user');
+      res.status(500).json({ error: 'Failed to create user' });
+    }
+  });
+
+  app.get('/api/status', requireLogin, (req, res) => {
     res.json({ connection: connectionState, deviceName: DEVICE_NAME, lastStatusAt, hasQR: !!currentQR });
   });
 
-  app.get('/api/qr', requireAuth, (req, res) => {
+  app.get('/api/qr', requireLogin, (req, res) => {
     if (!currentQR) return res.status(404).json({ error: 'No QR available' });
     res.json({ qr: currentQR });
   });
 
-  app.get('/api/chats', requireAuth, (req, res) => {
+  app.get('/api/chats', requireLogin, (req, res) => {
     const limit = Number(req.query.limit || 200);
     const offset = Number(req.query.offset || 0);
     res.json({ chats: db.listChats(limit, offset) });
   });
 
-  app.post('/api/chats/:jid/mute', requireAuth, (req, res) => {
+  app.post('/api/chats/:jid/mute', requireLogin, (req, res) => {
     const muted = !!req.body?.muted;
     db.setMuted(req.params.jid, muted);
     res.json({ ok: true, muted });
   });
 
-  app.get('/api/chats/:jid/messages', requireAuth, (req, res) => {
+  app.get('/api/chats/:jid/messages', requireLogin, (req, res) => {
     const limit = Number(req.query.limit || 50);
     const offset = Number(req.query.offset || 0);
     res.json({ messages: db.getMessages(req.params.jid, limit, offset) });
   });
 
-  app.post('/api/chats/:jid/send', requireAuth, async (req, res) => {
+  app.post('/api/chats/:jid/send', requireLogin, async (req, res) => {
     const text = (req.body?.text || '').trim();
     if (!text) return res.status(400).json({ error: 'text required' });
     if (!waSock) return res.status(503).json({ error: 'WhatsApp socket not ready' });
@@ -286,7 +334,26 @@ function startHttpServer() {
     }
   });
 
-  app.post('/api/unlink', requireAuth, async (req, res) => {
+  app.post('/api/chats/:jid/backfill', requireLogin, async (req, res) => {
+    const days = Number(req.body?.days || 30);
+    const sinceMs = Date.now() - days * 86400000;
+    if (!waSock) return res.status(503).json({ error: 'WhatsApp socket not ready' });
+    try {
+      const msgs = await waSock.fetchMessagesFromWA(req.params.jid, 500, { startTimestamp: Math.floor(sinceMs / 1000) });
+      let saved = 0;
+      msgs
+        .map(mapFetchedMessage)
+        .filter(Boolean)
+        .forEach((m) => { db.saveMessage(m); saved += 1; });
+      broadcastMessage(req.params.jid);
+      res.json({ ok: true, saved });
+    } catch (err) {
+      logger.error(err, 'Backfill failed');
+      res.status(500).json({ error: 'backfill failed' });
+    }
+  });
+
+  app.post('/api/unlink', requireLogin, async (req, res) => {
     try {
       await fs.promises.rm(AUTH_FOLDER, { recursive: true, force: true });
       currentQR = null;
@@ -302,7 +369,7 @@ function startHttpServer() {
     }
   });
 
-  app.get('/api/events', requireAuthQuery, (req, res) => {
+  app.get('/api/events', requireLogin, (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -327,3 +394,4 @@ startWhatsApp().catch((err) => {
   logger.error(err, 'WhatsApp bridge failed to start');
   process.exit(1);
 });
+userStore.ensureDefaultUser();

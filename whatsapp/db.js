@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
+const crypto = require('crypto');
 
 const dataDir = path.join(__dirname, 'data');
 if (!fs.existsSync(dataDir)) {
@@ -38,6 +39,14 @@ CREATE TABLE IF NOT EXISTS messages (
   ts INTEGER,
   key_id TEXT
 );
+
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  salt TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
 `;
 
 createTables.split(';').forEach((stmt) => {
@@ -50,16 +59,56 @@ createTables.split(';').forEach((stmt) => {
 // Best-effort migration for muted column
 try { db.prepare('ALTER TABLE chats ADD COLUMN muted INTEGER DEFAULT 0').run(); } catch (e) { /* ignore */ }
 
+// User utilities
+function hashPassword(password, salt) {
+  const derived = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${derived}`;
+}
+
+function verifyPassword(password, stored) {
+  const [salt, digest] = (stored || '').split(':');
+  if (!salt || !digest) return false;
+  const derived = hashPassword(password, salt).split(':')[1];
+  return crypto.timingSafeEqual(Buffer.from(digest, 'hex'), Buffer.from(derived, 'hex'));
+}
+
+function createUser(username, password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const password_hash = hashPassword(password, salt);
+  const now = Date.now();
+  db.prepare('INSERT INTO users (username, password_hash, salt, created_at) VALUES (?, ?, ?, ?)')
+    .run(username, password_hash, salt, now);
+  return { username };
+}
+
+function getUser(username) {
+  return db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+}
+
+function hasUsers() {
+  const row = db.prepare('SELECT COUNT(1) as cnt FROM users').get();
+  return row?.cnt > 0;
+}
+
+function listUsers() {
+  return db.prepare('SELECT username, created_at as createdAt FROM users ORDER BY created_at DESC').all();
+}
+
+function ensureDefaultUser() {
+  if (hasUsers()) return null;
+  return createUser('admin', 'admin');
+}
+
 const upsertChatStmt = db.prepare(
-  `INSERT INTO chats (jid, name, is_group, last_message, last_ts, unread, muted)
-   VALUES (@jid, @name, @is_group, @last_message, @last_ts, @unread, @muted)
-   ON CONFLICT(jid) DO UPDATE SET
-     name=COALESCE(excluded.name, chats.name),
-     is_group=excluded.is_group,
-     last_message=excluded.last_message,
-     last_ts=excluded.last_ts,
-     unread=excluded.unread,
-     muted=COALESCE(excluded.muted, chats.muted)`
+    `INSERT INTO chats (jid, name, is_group, last_message, last_ts, unread, muted)
+     VALUES (@jid, @name, @is_group, @last_message, @last_ts, @unread, @muted)
+     ON CONFLICT(jid) DO UPDATE SET
+       name=COALESCE(chats.name, excluded.name),
+       is_group=excluded.is_group,
+       last_message=excluded.last_message,
+       last_ts=excluded.last_ts,
+       unread=excluded.unread,
+       muted=COALESCE(excluded.muted, chats.muted)`
 );
 
 const insertMessageStmt = db.prepare(
@@ -143,4 +192,12 @@ module.exports = {
   getChat,
   setMuted,
   dbPath,
+  userStore: {
+    createUser,
+    getUser,
+    verifyPassword,
+    hasUsers,
+    listUsers,
+    ensureDefaultUser,
+  },
 };
