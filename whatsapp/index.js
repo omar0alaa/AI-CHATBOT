@@ -53,6 +53,12 @@ function nextBackoff(account) {
   return prev;
 }
 
+function describeDisconnect(err) {
+  const statusCode = err?.output?.statusCode || err?.data?.statusCode || err?.data?.attrs?.code;
+  const message = err?.message || err?.output?.payload?.message;
+  return { statusCode, message, raw: err?.output || err };
+}
+
 function getSession(account) {
   return sessions.get(account);
 }
@@ -111,6 +117,7 @@ async function ensureWhatsApp(account) {
   if (creatingSessions.has(account)) return creatingSessions.get(account);
 
   const creation = (async () => {
+    logger.debug({ account, authDir: authPathFor(account) }, 'ensureWhatsApp: starting');
     const authDir = authPathFor(account);
     const { state, saveCreds } = await useMultiFileAuthState(authDir);
     const { version } = await fetchLatestBaileysVersion();
@@ -138,6 +145,9 @@ async function ensureWhatsApp(account) {
     sock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect, qr } = update;
       const sess = sessions.get(account);
+      const disconnectInfo = lastDisconnect ? describeDisconnect(lastDisconnect.error) : null;
+
+      logger.debug({ account, connection, hasQR: !!qr, statusCode: disconnectInfo?.statusCode, message: disconnectInfo?.message }, 'connection.update');
 
       if (qr && sess) {
         try {
@@ -146,6 +156,7 @@ async function ensureWhatsApp(account) {
         } catch (err) {
           logger.error(err, 'Failed to render QR');
         }
+        logger.debug({ account }, 'QR generated and stored');
         broadcastStatus(account);
         broadcastQr(account, sess.currentQR);
       }
@@ -192,6 +203,7 @@ async function ensureWhatsApp(account) {
 
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
       if (type !== 'notify' || !messages) return;
+      logger.debug({ account, count: messages.length }, 'messages.upsert received');
       for (const msg of messages) {
         try {
           await captureMessage(account, msg);
