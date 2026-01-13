@@ -169,6 +169,17 @@ async function ensureWhatsApp(account) {
   return sock;
 }
 
+async function waitForQr(account, timeoutMs = 20000) {
+  const start = Date.now();
+  await ensureWhatsApp(account);
+  while (Date.now() - start < timeoutMs) {
+    const qr = getSession(account)?.currentQR;
+    if (qr) return qr;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return null;
+}
+
 function extractText(msg) {
   const m = msg.message || {};
   if (m.conversation) return m.conversation.trim();
@@ -319,10 +330,9 @@ function startHttpServer() {
 
   app.get('/api/qr', requireLogin, async (req, res) => {
     const account = req.session.user.username;
-    await ensureWhatsApp(account);
-    const sess = getSession(account);
-    if (!sess?.currentQR) return res.status(404).json({ error: 'No QR available' });
-    res.json({ qr: sess.currentQR });
+    const qr = await waitForQr(account);
+    if (!qr) return res.status(404).json({ error: 'No QR available yet' });
+    res.json({ qr });
   });
 
   app.get('/api/chats', requireLogin, async (req, res) => {
