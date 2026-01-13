@@ -38,6 +38,7 @@ if (!globalThis.crypto) {
 
 const sessions = new Map(); // account -> { sock, currentQR, connectionState, lastStatusAt }
 const sseClients = new Map(); // account -> Set<res>
+const stream515Count = new Map(); // account -> consecutive 515 stream errors
 
 function getSession(account) {
   return sessions.get(account);
@@ -139,9 +140,16 @@ async function ensureWhatsApp(account) {
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
       logger.warn({ account, reason: lastDisconnect?.error }, 'WhatsApp connection closed');
       if (statusCode === 515) {
-        logger.warn({ account }, 'Encountered stream error 515; clearing auth and forcing relink');
-        try { await fs.promises.rm(authPathFor(account), { recursive: true, force: true }); } catch (e) { logger.error(e, 'Failed to clear auth folder'); }
-        sessions.delete(account);
+        const count = (stream515Count.get(account) || 0) + 1;
+        stream515Count.set(account, count);
+        if (count >= 2) {
+          logger.warn({ account, count }, 'Encountered stream error 515 repeatedly; clearing auth and forcing relink');
+          try { await fs.promises.rm(authPathFor(account), { recursive: true, force: true }); } catch (e) { logger.error(e, 'Failed to clear auth folder'); }
+          sessions.delete(account);
+          stream515Count.set(account, 0);
+        } else {
+          logger.warn({ account, count }, 'Encountered stream error 515; retrying without clearing auth');
+        }
       }
       if (shouldReconnect) {
         ensureWhatsApp(account).catch((err) => logger.error(err, 'Reconnect failed'));
@@ -151,6 +159,7 @@ async function ensureWhatsApp(account) {
     } else if (connection === 'open') {
       if (sess) sess.currentQR = null;
       setStatus(account, 'open');
+      stream515Count.set(account, 0);
       logger.info({ account }, 'WhatsApp connection established');
     } else if (connection) {
       setStatus(account, connection);
