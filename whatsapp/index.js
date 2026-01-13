@@ -135,9 +135,14 @@ async function ensureWhatsApp(account) {
 
     if (connection === 'close') {
       setStatus(account, 'close');
-      const shouldReconnect =
-        lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
       logger.warn({ account, reason: lastDisconnect?.error }, 'WhatsApp connection closed');
+      if (statusCode === 515) {
+        logger.warn({ account }, 'Encountered stream error 515; clearing auth and forcing relink');
+        try { await fs.promises.rm(authPathFor(account), { recursive: true, force: true }); } catch (e) { logger.error(e, 'Failed to clear auth folder'); }
+        sessions.delete(account);
+      }
       if (shouldReconnect) {
         ensureWhatsApp(account).catch((err) => logger.error(err, 'Reconnect failed'));
       } else {
