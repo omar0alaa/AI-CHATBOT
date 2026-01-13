@@ -40,6 +40,18 @@ const sessions = new Map(); // account -> { sock, currentQR, connectionState, la
 const sseClients = new Map(); // account -> Set<res>
 const stream515Count = new Map(); // account -> consecutive 515 stream errors
 const creatingSessions = new Map(); // account -> Promise<sock>
+const reconnectBackoff = new Map(); // account -> ms backoff
+
+function resetBackoff(account) {
+  reconnectBackoff.set(account, 1000);
+}
+
+function nextBackoff(account) {
+  const prev = reconnectBackoff.get(account) || 1000;
+  const next = Math.min(prev * 2, 15000);
+  reconnectBackoff.set(account, next);
+  return prev;
+}
 
 function getSession(account) {
   return sessions.get(account);
@@ -156,14 +168,22 @@ async function ensureWhatsApp(account) {
           }
         }
         if (shouldReconnect) {
-          ensureWhatsApp(account).catch((err) => logger.error(err, 'Reconnect failed'));
+          const delay = nextBackoff(account);
+          logger.warn({ account, delay }, 'Scheduling reconnect after close');
+          setTimeout(() => {
+            ensureWhatsApp(account).catch((err) => logger.error(err, 'Reconnect failed'));
+          }, delay);
         } else {
           logger.error('Logged out from WhatsApp. Delete auth folder to re-auth.');
+          sessions.delete(account);
+          stream515Count.set(account, 0);
+          resetBackoff(account);
         }
       } else if (connection === 'open') {
         if (sess) sess.currentQR = null;
         setStatus(account, 'open');
         stream515Count.set(account, 0);
+        resetBackoff(account);
         logger.info({ account }, 'WhatsApp connection established');
       } else if (connection) {
         setStatus(account, connection);
