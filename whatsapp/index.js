@@ -39,6 +39,7 @@ if (!globalThis.crypto) {
 const sessions = new Map(); // account -> { sock, currentQR, connectionState, lastStatusAt }
 const sseClients = new Map(); // account -> Set<res>
 const stream515Count = new Map(); // account -> consecutive 515 stream errors
+const creatingSessions = new Map(); // account -> Promise<sock>
 
 function getSession(account) {
   return sessions.get(account);
@@ -95,92 +96,103 @@ function authPathFor(account) {
 
 async function ensureWhatsApp(account) {
   if (sessions.has(account)) return sessions.get(account).sock;
-  const authDir = authPathFor(account);
-  const { state, saveCreds } = await useMultiFileAuthState(authDir);
-  const { version } = await fetchLatestBaileysVersion();
-  const sock = makeWASocket({
-    version,
-    printQRInTerminal: true,
-    auth: state,
-    logger,
-    browser: [DEVICE_NAME, 'Chrome', '4.0'],
-    markOnlineOnConnect: false,
-    syncFullHistory: false,
-  });
+  if (creatingSessions.has(account)) return creatingSessions.get(account);
 
-  const store = getStore(account);
-  sessions.set(account, {
-    sock,
-    currentQR: null,
-    connectionState: 'init',
-    lastStatusAt: Date.now(),
-    store,
-  });
+  const creation = (async () => {
+    const authDir = authPathFor(account);
+    const { state, saveCreds } = await useMultiFileAuthState(authDir);
+    const { version } = await fetchLatestBaileysVersion();
+    const sock = makeWASocket({
+      version,
+      printQRInTerminal: false,
+      auth: state,
+      logger,
+      browser: [DEVICE_NAME, 'Chrome', '4.0'],
+      markOnlineOnConnect: false,
+      syncFullHistory: false,
+    });
 
-  sock.ev.on('creds.update', saveCreds);
+    const store = getStore(account);
+    sessions.set(account, {
+      sock,
+      currentQR: null,
+      connectionState: 'init',
+      lastStatusAt: Date.now(),
+      store,
+    });
 
-  sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect, qr } = update;
-    const sess = sessions.get(account);
+    sock.ev.on('creds.update', saveCreds);
 
-    if (qr && sess) {
-      try {
-        sess.currentQR = await QRCode.toDataURL(qr);
-        qrcodeTerm.generate(qr, { small: true });
-      } catch (err) {
-        logger.error(err, 'Failed to render QR');
+    sock.ev.on('connection.update', async (update) => {
+      const { connection, lastDisconnect, qr } = update;
+      const sess = sessions.get(account);
+
+      if (qr && sess) {
+        try {
+          sess.currentQR = await QRCode.toDataURL(qr);
+          qrcodeTerm.generate(qr, { small: true });
+        } catch (err) {
+          logger.error(err, 'Failed to render QR');
+        }
+        broadcastStatus(account);
+        broadcastQr(account, sess.currentQR);
       }
-      broadcastStatus(account);
-      broadcastQr(account, sess.currentQR);
-    }
 
-    if (connection === 'close') {
-      setStatus(account, 'close');
-      const statusCode = lastDisconnect?.error?.output?.statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      logger.warn({ account, reason: lastDisconnect?.error }, 'WhatsApp connection closed');
-      if (statusCode === 515) {
-        const count = (stream515Count.get(account) || 0) + 1;
-        stream515Count.set(account, count);
-        if (count >= 2) {
-          logger.warn({ account, count }, 'Encountered stream error 515 repeatedly; clearing auth and forcing relink');
-          try { await fs.promises.rm(authPathFor(account), { recursive: true, force: true }); } catch (e) { logger.error(e, 'Failed to clear auth folder'); }
-          sessions.delete(account);
-          stream515Count.set(account, 0);
+      if (connection === 'close') {
+        setStatus(account, 'close');
+        const statusCode = lastDisconnect?.error?.output?.statusCode;
+        const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+        logger.warn({ account, reason: lastDisconnect?.error }, 'WhatsApp connection closed');
+        if (statusCode === 515) {
+          const count = (stream515Count.get(account) || 0) + 1;
+          stream515Count.set(account, count);
+          if (count >= 2) {
+            logger.warn({ account, count }, 'Encountered stream error 515 repeatedly; clearing auth and forcing relink');
+            try { await fs.promises.rm(authPathFor(account), { recursive: true, force: true }); } catch (e) { logger.error(e, 'Failed to clear auth folder'); }
+            sessions.delete(account);
+            stream515Count.set(account, 0);
+          } else {
+            logger.warn({ account, count }, 'Encountered stream error 515; retrying without clearing auth');
+          }
+        }
+        if (shouldReconnect) {
+          ensureWhatsApp(account).catch((err) => logger.error(err, 'Reconnect failed'));
         } else {
-          logger.warn({ account, count }, 'Encountered stream error 515; retrying without clearing auth');
+          logger.error('Logged out from WhatsApp. Delete auth folder to re-auth.');
+        }
+      } else if (connection === 'open') {
+        if (sess) sess.currentQR = null;
+        setStatus(account, 'open');
+        stream515Count.set(account, 0);
+        logger.info({ account }, 'WhatsApp connection established');
+      } else if (connection) {
+        setStatus(account, connection);
+      }
+    });
+
+    sock.ev.on('messages.upsert', async ({ messages, type }) => {
+      if (type !== 'notify' || !messages) return;
+      for (const msg of messages) {
+        try {
+          await captureMessage(account, msg);
+          if (!msg.key.fromMe) {
+            await handleIncoming(account, sock, msg);
+          }
+        } catch (err) {
+          logger.error(err, 'Failed processing message');
         }
       }
-      if (shouldReconnect) {
-        ensureWhatsApp(account).catch((err) => logger.error(err, 'Reconnect failed'));
-      } else {
-        logger.error('Logged out from WhatsApp. Delete auth folder to re-auth.');
-      }
-    } else if (connection === 'open') {
-      if (sess) sess.currentQR = null;
-      setStatus(account, 'open');
-      stream515Count.set(account, 0);
-      logger.info({ account }, 'WhatsApp connection established');
-    } else if (connection) {
-      setStatus(account, connection);
-    }
-  });
+    });
 
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify' || !messages) return;
-    for (const msg of messages) {
-      try {
-        await captureMessage(account, msg);
-        if (!msg.key.fromMe) {
-          await handleIncoming(account, sock, msg);
-        }
-      } catch (err) {
-        logger.error(err, 'Failed processing message');
-      }
-    }
-  });
+    return sock;
+  })();
 
-  return sock;
+  creatingSessions.set(account, creation);
+  try {
+    return await creation;
+  } finally {
+    creatingSessions.delete(account);
+  }
 }
 
 async function waitForQr(account, timeoutMs = 20000) {
