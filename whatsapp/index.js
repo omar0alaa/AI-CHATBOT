@@ -41,7 +41,44 @@ let waSock = null;
 let currentQR = null;
 let connectionState = 'init';
 let lastStatusAt = Date.now();
+let ownerJid = null;
 const sseClients = new Set();
+let autoBackfillTimer = null;
+
+function stripDevice(jid = '') {
+  return jid.split(':')[0];
+}
+
+async function backfillChatHistory(jid, days = 30) {
+  const sinceMs = Date.now() - days * 86400000;
+  if (!waSock) return 0;
+  try {
+    const msgs = await waSock.fetchMessagesFromWA(jid, 500, { startTimestamp: Math.floor(sinceMs / 1000) });
+    let saved = 0;
+    msgs
+      .map(mapFetchedMessage)
+      .filter(Boolean)
+      .forEach((m) => {
+        db.saveMessage(m);
+        fetchAndStoreProfilePic(m.jid);
+        saved += 1;
+      });
+    if (saved > 0) broadcastMessage(jid);
+    return saved;
+  } catch (err) {
+    logger.warn({ err, jid }, 'Backfill failed');
+    return 0;
+  }
+}
+
+async function backfillAllKnownChats(days = 30) {
+  if (!waSock) return;
+  const baseOwner = stripDevice(ownerJid || '');
+  const chats = db.listChats(500, 0, true).filter((c) => stripDevice(c.jid) !== baseOwner);
+  for (const chat of chats) {
+    await backfillChatHistory(chat.jid, days);
+  }
+}
 
 function setStatus(state) {
   connectionState = state;
@@ -52,7 +89,7 @@ function setStatus(state) {
 function broadcastStatus() {
   const payload = JSON.stringify({
     type: 'status',
-    data: { connection: connectionState, deviceName: DEVICE_NAME, lastStatusAt, hasQR: !!currentQR },
+    data: { connection: connectionState, deviceName: DEVICE_NAME, lastStatusAt, hasQR: !!currentQR, userJid: ownerJid },
   });
   for (const res of sseClients) {
     res.write(`data: ${payload}\n\n`);
@@ -77,7 +114,8 @@ async function startWhatsApp() {
     logger,
     browser: [DEVICE_NAME, 'Chrome', '4.0'],
     markOnlineOnConnect: false,
-    syncFullHistory: false,
+    // Enable initial history/chat sync so we receive chat metadata to seed backfill
+    syncFullHistory: true,
   });
 
   waSock = sock;
@@ -109,8 +147,13 @@ async function startWhatsApp() {
       }
     } else if (connection === 'open') {
       currentQR = null;
+      ownerJid = sock.user?.id || ownerJid;
       setStatus('open');
       logger.info('WhatsApp connection established');
+      if (autoBackfillTimer) clearTimeout(autoBackfillTimer);
+      autoBackfillTimer = setTimeout(() => {
+        backfillAllKnownChats(30).catch((err) => logger.warn({ err }, 'Auto backfill failed'));
+      }, 3000);
     } else if (connection) {
       setStatus(connection);
     }
@@ -129,6 +172,30 @@ async function startWhatsApp() {
       }
     }
   });
+
+  sock.ev.on('chats.upsert', async ({ chats }) => {
+    if (!chats?.length) return;
+    chats.forEach((c) => {
+      const jid = c.id || c.jid;
+      if (!jid) return;
+      const lastTsRaw = c.lastMessage?.messageTimestamp || c.conversationTimestamp;
+      const lastTs = lastTsRaw ? Number(lastTsRaw) * 1000 : null;
+      const preview = c.lastMessage?.message
+        ? extractText({ message: c.lastMessage.message, key: { remoteJid: jid, fromMe: false }, messageTimestamp: c.lastMessage?.messageTimestamp })
+        : c.lastMessage?.conversation || '';
+      db.upsertChatMeta({
+        jid,
+        name: c.name || c.subject || null,
+        isGroup: jid.endsWith('@g.us'),
+        lastMessage: preview || null,
+        lastTs,
+        unread: c.unreadCount || 0,
+        muted: c.muteEndTime ? 1 : 0,
+        archived: c.archive ? 1 : 0,
+      });
+      fetchAndStoreProfilePic(jid);
+    });
+  });
 }
 
 function extractText(msg) {
@@ -141,11 +208,32 @@ function extractText(msg) {
   return '';
 }
 
+async function fetchAndStoreProfilePic(jid) {
+  try {
+    const existing = db.getChat(jid);
+    if (existing?.profilePic) return existing.profilePic;
+    if (!waSock?.profilePictureUrl) return null;
+    const url = await waSock.profilePictureUrl(jid, 'image');
+    if (!url) return null;
+    const resp = await axios.get(url, { responseType: 'arraybuffer' });
+    const base64 = 'data:image/jpeg;base64,' + Buffer.from(resp.data, 'binary').toString('base64');
+    db.setProfilePic(jid, base64);
+    return base64;
+  } catch (err) {
+    logger.debug({ err }, 'Failed to fetch profile picture');
+    return null;
+  }
+}
+
 async function captureMessage(msg) {
   const remoteJid = msg.key.remoteJid || '';
   if (!remoteJid || remoteJid.endsWith('@status')) return;
 
   const text = extractText(msg);
+  const baseRemote = stripDevice(remoteJid);
+  const baseOwner = stripDevice(ownerJid || '');
+  if (baseOwner && baseRemote === baseOwner) return;
+  if (!text) return;
   const fromMe = !!msg.key.fromMe;
   const isGroup = remoteJid.endsWith('@g.us');
   const tsSeconds = Number(msg.messageTimestamp || Date.now());
@@ -160,6 +248,7 @@ async function captureMessage(msg) {
     name: msg.pushName,
     isGroup,
   });
+  fetchAndStoreProfilePic(remoteJid);
   broadcastMessage(remoteJid);
 }
 
@@ -271,7 +360,20 @@ function startHttpServer() {
   app.post('/api/users', (req, res) => {
     const { username, password } = req.body || {};
     if (!username || !password) return res.status(400).json({ error: 'username and password required' });
-    if (userStore.hasUsers() && !req.session?.user) return res.status(401).json({ error: 'Unauthorized' });
+
+    // Allow unauthenticated signup only when there are no users or only the bootstrap admin
+    let allowUnauthedCreate = false;
+    try {
+      const users = userStore.listUsers ? userStore.listUsers() : [];
+      const count = Array.isArray(users) ? users.length : 0;
+      const onlyDefaultAdmin = count === 1 && users[0]?.username === 'admin';
+      allowUnauthedCreate = count === 0 || onlyDefaultAdmin;
+    } catch (err) {
+      logger.warn({ err }, 'Failed to inspect existing users');
+      allowUnauthedCreate = !userStore.hasUsers();
+    }
+
+    if (!allowUnauthedCreate && !req.session?.user) return res.status(401).json({ error: 'Unauthorized' });
     try {
       userStore.createUser(username.trim(), password);
       res.json({ ok: true, user: { username } });
@@ -285,7 +387,7 @@ function startHttpServer() {
   });
 
   app.get('/api/status', requireLogin, (req, res) => {
-    res.json({ connection: connectionState, deviceName: DEVICE_NAME, lastStatusAt, hasQR: !!currentQR });
+    res.json({ connection: connectionState, deviceName: DEVICE_NAME, lastStatusAt, hasQR: !!currentQR, userJid: ownerJid });
   });
 
   app.get('/api/qr', requireLogin, (req, res) => {
@@ -296,7 +398,16 @@ function startHttpServer() {
   app.get('/api/chats', requireLogin, (req, res) => {
     const limit = Number(req.query.limit || 200);
     const offset = Number(req.query.offset || 0);
-    res.json({ chats: db.listChats(limit, offset) });
+    const includeArchived = req.query.includeArchived === '1' || req.query.includeArchived === 'true';
+    const baseOwner = stripDevice(ownerJid || '');
+    const chats = db.listChats(limit, offset, includeArchived).filter((c) => {
+      const base = stripDevice(c.jid);
+      const nameOrJid = (c.name || c.jid || '').toLowerCase();
+      const isSystem = nameOrJid.includes('@s.whatsapp.net');
+      return (!baseOwner || base !== baseOwner) && !isSystem;
+    });
+    chats.forEach((c) => { if (!c.profilePic) fetchAndStoreProfilePic(c.jid); });
+    res.json({ chats });
   });
 
   app.post('/api/chats/:jid/mute', requireLogin, (req, res) => {
@@ -336,21 +447,25 @@ function startHttpServer() {
 
   app.post('/api/chats/:jid/backfill', requireLogin, async (req, res) => {
     const days = Number(req.body?.days || 30);
-    const sinceMs = Date.now() - days * 86400000;
     if (!waSock) return res.status(503).json({ error: 'WhatsApp socket not ready' });
     try {
-      const msgs = await waSock.fetchMessagesFromWA(req.params.jid, 500, { startTimestamp: Math.floor(sinceMs / 1000) });
-      let saved = 0;
-      msgs
-        .map(mapFetchedMessage)
-        .filter(Boolean)
-        .forEach((m) => { db.saveMessage(m); saved += 1; });
-      broadcastMessage(req.params.jid);
+      const saved = await backfillChatHistory(req.params.jid, days);
       res.json({ ok: true, saved });
     } catch (err) {
       logger.error(err, 'Backfill failed');
       res.status(500).json({ error: 'backfill failed' });
     }
+  });
+
+  app.post('/api/chats/:jid/archive', requireLogin, (req, res) => {
+    const archived = req.body?.archived !== false;
+    db.archiveChat(req.params.jid, archived);
+    res.json({ ok: true, archived });
+  });
+
+  app.delete('/api/chats/:jid', requireLogin, (req, res) => {
+    db.deleteChat(req.params.jid);
+    res.json({ ok: true });
   });
 
   app.post('/api/unlink', requireLogin, async (req, res) => {
@@ -379,7 +494,7 @@ function startHttpServer() {
     // Send initial status
     const initial = JSON.stringify({
       type: 'status',
-      data: { connection: connectionState, deviceName: DEVICE_NAME, lastStatusAt, hasQR: !!currentQR },
+      data: { connection: connectionState, deviceName: DEVICE_NAME, lastStatusAt, hasQR: !!currentQR, userJid: ownerJid },
     });
     res.write(`data: ${initial}\n\n`);
   });

@@ -26,10 +26,11 @@
     .app-shell { display: grid; grid-template-columns: auto 1fr; min-height: 100vh; height: 100%; }
     .rail { width: 88px; background: linear-gradient(180deg, #0f172a 0%, #0b1222 100%); border-right: 1px solid var(--border); padding: 16px 12px; display: flex; flex-direction: column; gap: 12px; align-items: center; transition: width 0.2s ease; overflow: hidden; }
     .rail:hover { width: 220px; align-items: stretch; }
-    .rail .top-stack { display: flex; flex-direction: column; gap: 14px; width: 100%; align-items: center; }
+    .rail .top-stack { display: flex; flex-direction: column; gap: 14px; width: 100%; align-items: center;}
     .rail .logo { width: 40px; height: 40px; border-radius: 12px; background: linear-gradient(135deg, var(--accent-2), var(--accent)); display: grid; place-items: center; font-weight: 800; color: #0b1222; box-shadow: 0 12px 28px rgba(59,130,246,0.25); margin: 0 auto; }
     .rail .toggle-rail { display: none; }
     .rail .nav, .rail .nav-footer { display: flex; flex-direction: column; gap: 12px; width: 100%; align-items: stretch; }
+    .rail .nav { margin-top: 2vh; }
     .rail button { cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 12px; border-radius: 14px; color: #cbd5e1; border: 1px solid transparent; background: transparent; transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease; width: 100%; box-sizing: border-box; box-shadow: none; }
     .rail:hover button { justify-content: flex-start; }
     .rail button:hover { background: rgba(255,255,255,0.05); color: #fff; box-shadow: none; }
@@ -67,13 +68,16 @@
     .tab.active { background: rgba(59,130,246,0.18); color: #fff; }
 
     .chat-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; overflow-x: hidden; flex: 1; display: flex; flex-direction: column; gap: 10px; }
-    .chat-item { padding: 12px; border-radius: 14px; cursor: pointer; display: grid; grid-template-columns: 1fr auto; gap: 6px; transition: background 0.1s ease, transform 0.1s ease; border: 1px solid transparent; background: rgba(255,255,255,0.02); min-width: 0; }
-    .chat-item > div:first-child { min-width: 0; }
+    .chat-item { padding: 12px; border-radius: 14px; cursor: pointer; display: flex; gap: 10px; align-items: center; transition: background 0.1s ease, transform 0.1s ease; border: 1px solid transparent; background: rgba(255,255,255,0.02); min-width: 0; }
+    .chat-avatar { width: 38px; height: 38px; border-radius: 50%; overflow: visible; flex-shrink: 0; background: linear-gradient(135deg, #1e293b, #0f172a); display: grid; place-items: center; color: #cbd5e1; font-weight: 800; font-size: 14px; text-transform: uppercase; position: relative; }
+    .chat-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 50%; }
+    .chat-badge { position: absolute; top: -6px; left: -6px; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px; background: var(--danger); color: #fff; font-size: 11px; font-weight: 800; display: grid; place-items: center; border: 2px solid #0b1222; box-shadow: 0 8px 16px rgba(0,0,0,0.25); pointer-events: none; }
+    .chat-item .chat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
     .chat-item:hover { background: rgba(255,255,255,0.05); transform: translateY(-1px); }
     .chat-item.active { background: rgba(37,99,235,0.18); border-color: rgba(37,99,235,0.35); box-shadow: 0 12px 28px rgba(37,99,235,0.2); }
     .chat-name { font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; }
     .chat-preview { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .chat-ts { color: #64748b; font-size: 11px; }
+    .chat-ts { color: #64748b; font-size: 11px; text-align: right; }
     .pill { padding: 4px 8px; border-radius: 10px; background: rgba(255,255,255,0.08); font-size: 11px; font-weight: 700; color: #cbd5e1; }
     .ai-icon { font-size: 14px; color: #22c55e; }
     .user-chip { display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.06); padding: 8px 12px; border-radius: 999px; }
@@ -98,6 +102,12 @@
     .qr-card { background: #0f172a; padding: 24px; border-radius: 14px; width: 340px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.35); border: 1px solid var(--border); }
     .qr-card img { width: 280px; border-radius: 10px; }
 
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; backdrop-filter: blur(8px); z-index: 1400; padding: 16px; }
+    .modal-card { background: rgba(12,21,41,0.96); border: 1px solid var(--border); border-radius: 16px; padding: 20px; width: min(420px, 100%); box-shadow: 0 20px 60px rgba(0,0,0,0.5); display: grid; gap: 12px; }
+    .modal-head { display: flex; align-items: center; gap: 12px; }
+    .modal-icon { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: rgba(239,68,68,0.1); color: var(--danger); border: 1px solid rgba(239,68,68,0.3); }
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+
     .login-overlay { position: fixed; inset: 0; background: radial-gradient(circle at 30% 20%, rgba(59,130,246,0.25), transparent 40%), radial-gradient(circle at 80% 0%, rgba(99,102,241,0.18), transparent 35%), #0b1224; display: flex; align-items: center; justify-content: center; z-index: 2000; }
     .login-card { width: 380px; background: rgba(15,23,42,0.95); color: var(--text); padding: 28px; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.45); border: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px; }
     .login-card h2 { margin: 0; font-size: 22px; }
@@ -121,7 +131,7 @@
 <body>
   <div id="login-overlay" class="login-overlay hidden">
     <div class="login-card">
-      <h2>WhatsApp Admin</h2>
+      <h2>WhatsApp Console</h2>
       <div id="login-subcopy" style="color: var(--muted); font-size: 13px;">Sign in to continue.</div>
       <div class="form-group">
         <label for="login-username">Username</label>
@@ -135,7 +145,7 @@
       <div class="actions" style="width:100%; justify-content: space-between; flex-wrap: wrap;">
         <button id="login-btn">Sign In</button>
         <button id="signup-btn" class="secondary" type="button">Create Admin</button>
-        <button id="login-demo" class="secondary" type="button">Demo Fill</button>
+        <button id="login-demo" hidden class="secondary" type="button">Demo Fill</button>
       </div>
     </div>
   </div>
@@ -168,6 +178,7 @@
         <div class="status">
           <div class="chip" id="status-connection"></div>
           <div class="status-label" id="status-label">Checking</div>
+          <div class="status-label" id="status-number">Number: --</div>
         </div>
         <div class="actions" style="gap:16px;">
           <div class="user-chip" id="user-chip">
@@ -187,6 +198,7 @@
             <div class="tab active" data-filter="all">All</div>
             <div class="tab" data-filter="unread">Unread</div>
             <div class="tab" data-filter="muted">Muted</div>
+            <div class="tab" data-filter="archived">Archived</div>
           </div>
           <ul class="chat-list" id="chat-list"></ul>
         </section>
@@ -206,6 +218,9 @@
                 </label>
               </div>
               <button hidden class="secondary" id="backfill-btn">Backfill 30d</button>
+              <button class="secondary" id="archive-btn">Archive</button>
+              <button class="secondary" id="unarchive-btn" style="display:none;">Unarchive</button>
+              <button class="danger" id="delete-btn">Delete</button>
             </div>
           </div>
 
@@ -241,12 +256,28 @@
 
   <div id="toast" class="toast hidden"></div>
 
+  <div id="confirm-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div class="modal-icon"><i class="fa-solid fa-trash"></i></div>
+        <div>
+          <div id="confirm-title" style="font-weight:800;">Confirm</div>
+          <div id="confirm-message" style="color: var(--muted); font-size: 13px;">Delete this chat?</div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="secondary" id="confirm-cancel">Cancel</button>
+        <button class="danger" id="confirm-accept">Delete</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const state = {
       chats: [],
       selected: null,
       messages: [],
-      status: { connection: 'init', deviceName: '', hasQR: false, lastStatusAt: null },
+      status: { connection: 'init', deviceName: '', hasQR: false, lastStatusAt: null, userJid: null },
       hasUsers: true,
       events: null,
       user: null,
@@ -272,13 +303,22 @@
       statusTitle: document.getElementById('status-title'),
       statusConn: document.getElementById('status-connection'),
       statusLabel: document.getElementById('status-label'),
+      statusNumber: document.getElementById('status-number'),
       toast: document.getElementById('toast'),
       qrModal: document.getElementById('qr-modal'),
       qrImg: document.getElementById('qr-img'),
       qrError: document.getElementById('qr-error'),
+      confirmModal: document.getElementById('confirm-modal'),
+      confirmTitle: document.getElementById('confirm-title'),
+      confirmMessage: document.getElementById('confirm-message'),
+      confirmAccept: document.getElementById('confirm-accept'),
+      confirmCancel: document.getElementById('confirm-cancel'),
       userName: document.getElementById('user-name'),
       userAvatar: document.getElementById('user-avatar'),
       navChats: document.getElementById('nav-chats'),
+      archiveBtn: document.getElementById('archive-btn'),
+      deleteBtn: document.getElementById('delete-btn'),
+      unarchiveBtn: document.getElementById('unarchive-btn'),
     };
 
     function showToast(msg, isError = false) {
@@ -286,6 +326,28 @@
       els.toast.classList.toggle('hidden', false);
       els.toast.style.borderColor = isError ? 'rgba(239,68,68,0.5)' : 'var(--border)';
       setTimeout(() => els.toast.classList.add('hidden'), 3200);
+    }
+
+    function confirmDialog(message, confirmLabel = 'Confirm', title) {
+      return new Promise((resolve) => {
+        const heading = title || confirmLabel || 'Confirm';
+        els.confirmTitle.textContent = heading;
+        els.confirmMessage.textContent = message;
+        els.confirmAccept.textContent = confirmLabel;
+        els.confirmModal.classList.remove('hidden');
+        els.confirmModal.style.display = 'flex';
+        const cleanup = (result) => {
+          els.confirmModal.classList.add('hidden');
+          els.confirmModal.style.display = 'none';
+          els.confirmAccept.onclick = null;
+          els.confirmCancel.onclick = null;
+          els.confirmModal.onclick = null;
+          resolve(result);
+        };
+        els.confirmAccept.onclick = () => cleanup(true);
+        els.confirmCancel.onclick = () => cleanup(false);
+        els.confirmModal.onclick = (e) => { if (e.target === els.confirmModal) cleanup(false); };
+      });
     }
 
     async function api(path, options = {}) {
@@ -308,6 +370,12 @@
       if (!ts) return '';
       const d = new Date(ts);
       return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    }
+
+    function formatJidNumber(jid) {
+      if (!jid) return '';
+      const core = jid.split('@')[0].split(':')[0];
+      return core;
     }
 
     function renderUser() {
@@ -375,7 +443,7 @@
 
     async function loadChats() {
       try {
-        const data = await api('/api/chats?limit=200');
+        const data = await api('/api/chats?limit=200&includeArchived=1');
         state.chats = data.chats || [];
         renderChats();
       } catch (err) {
@@ -390,9 +458,10 @@
       const filtered = state.chats.filter((c) => {
         const matchesFilter = !filter || (c.name || '').toLowerCase().includes(filter) || c.jid.toLowerCase().includes(filter);
         const matchesTab =
-          activeTab === 'all' ? true :
-          activeTab === 'unread' ? (c.unread || 0) > 0 :
-          activeTab === 'muted' ? !!c.muted : true;
+          activeTab === 'archived' ? !!c.archived :
+          activeTab === 'all' ? !c.archived :
+          activeTab === 'unread' ? (c.unread || 0) > 0 && !c.archived :
+          activeTab === 'muted' ? !!c.muted && !c.archived : true;
         return matchesFilter && matchesTab;
       });
 
@@ -404,14 +473,18 @@
       filtered.forEach((chat) => {
         const li = document.createElement('li');
         li.className = 'chat-item' + (state.selected === chat.jid ? ' active' : '');
+        const unreadBadge = (chat.unread || 0) > 0 ? `<div class="chat-badge">${chat.unread}</div>` : '';
+        const avatar = chat.profilePic
+          ? `<img src="${chat.profilePic}" alt="avatar" />`
+          : `<span>${(chat.name || chat.jid || '?')[0].toUpperCase()}</span>`;
         li.innerHTML = `
-          <div>
-            <div class="chat-name">${chat.name || chat.jid}${chat.muted ? '' : ' <i class="fa-solid fa-microchip ai-icon" title="AI active"></i>'}</div>
+          <div class="chat-avatar">${avatar}${unreadBadge}</div>
+          <div class="chat-main">
+            <div class="chat-name">${chat.name || chat.jid}${chat.muted ? '' : ' <i class="fa-solid fa-microchip ai-icon" title="AI active"></i>'}${chat.archived ? ' <span class="pill">Archived</span>' : ''}</div>
             <div class="chat-preview">${chat.lastMessage || ''}</div>
           </div>
           <div style="text-align:right; display:flex; flex-direction:column; gap:6px; align-items:flex-end;">
             <div class="chat-ts">${fmtDate(chat.lastTs)} ${fmtTime(chat.lastTs)}</div>
-            ${(chat.unread || 0) > 0 ? '<div class="badge" style="background: var(--accent);">'+chat.unread+'</div>' : ''}
           </div>`;
         li.onclick = () => selectChat(chat.jid, chat.name);
         els.chatList.appendChild(li);
@@ -426,7 +499,14 @@
       els.message.disabled = false;
       els.send.disabled = false;
       const meta = state.chats.find(c => c.jid === jid);
-      if (meta) els.autoReply.checked = !meta.muted;
+      if (meta) {
+        els.autoReply.checked = !meta.muted;
+        els.archiveBtn.style.display = meta.archived ? 'none' : 'inline-flex';
+        els.unarchiveBtn.style.display = meta.archived ? 'inline-flex' : 'none';
+      } else {
+        els.archiveBtn.style.display = 'inline-flex';
+        els.unarchiveBtn.style.display = 'none';
+      }
       await loadMessages(jid);
       renderChats();
     }
@@ -501,6 +581,59 @@
       } catch (err) { showToast(err.message, true); }
     }
 
+    function clearSelection() {
+      state.selected = null;
+      els.chatTitle.textContent = 'Select a chat';
+      els.chatJid.style.display = 'none';
+      els.message.disabled = true;
+      els.send.disabled = true;
+      els.archiveBtn.style.display = 'inline-flex';
+      els.unarchiveBtn.style.display = 'none';
+      els.thread.innerHTML = '<div class="empty">Select a chat to start or continue a conversation.</div>';
+    }
+
+    async function archiveChat() {
+      if (!state.selected) return;
+      try {
+        await api(`/api/chats/${encodeURIComponent(state.selected)}/archive`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ archived: true }),
+        });
+        showToast('Chat archived');
+        clearSelection();
+        await loadChats();
+      } catch (err) { showToast(err.message, true); }
+    }
+
+    async function unarchiveChat() {
+      if (!state.selected) return;
+      try {
+        await api(`/api/chats/${encodeURIComponent(state.selected)}/archive`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ archived: false }),
+        });
+        showToast('Chat unarchived');
+        clearSelection();
+        await loadChats();
+      } catch (err) { showToast(err.message, true); }
+    }
+
+    async function deleteChat() {
+      if (!state.selected) return;
+      const confirmed = await confirmDialog('Delete this chat and its messages?', 'Delete');
+      if (!confirmed) return;
+      try {
+        await api(`/api/chats/${encodeURIComponent(state.selected)}`, {
+          method: 'DELETE',
+        });
+        showToast('Chat deleted');
+        clearSelection();
+        await loadChats();
+      } catch (err) { showToast(err.message, true); }
+    }
+
     async function refreshStatus() {
       try {
         const data = await api('/api/status');
@@ -520,6 +653,9 @@
       const ready = conn === 'open';
       els.statusDot.style.background = ready ? 'var(--accent-2)' : '#fbbf24';
       els.statusLabel.textContent = state.status.hasQR ? 'Ready to scan QR' : ready ? 'Connected' : 'Not connected';
+      const linkedNumber = formatJidNumber(state.status.userJid);
+      els.statusNumber.textContent = linkedNumber ? `Number: ${linkedNumber}` : 'Number: --';
+      if (ready) { showQR(false); setActiveNav(els.navChats); }
     }
 
     async function showQR(show = true) {
@@ -539,7 +675,8 @@
     }
 
     async function unlink() {
-      if (!confirm('Unlink device and restart?')) return;
+      const confirmed = await confirmDialog('Unlink device and restart? This will sign out the current WhatsApp session.', 'Unlink');
+      if (!confirmed) return;
       try {
         await api('/api/unlink', { method: 'POST' });
         showToast('Unlinked. Waiting for restart.');
@@ -595,7 +732,11 @@
       setActiveNav(document.getElementById('nav-link'));
       showQR(true);
     };
-    document.getElementById('nav-unlink').onclick = () => { setActiveNav(document.getElementById('nav-unlink')); unlink(); };
+    document.getElementById('nav-unlink').onclick = async () => {
+      setActiveNav(document.getElementById('nav-unlink'));
+      await unlink();
+      setActiveNav(els.navChats);
+    };
     document.getElementById('nav-logout').onclick = async () => { await api('/api/logout', { method: 'POST' }); location.reload(); };
     els.navChats.onclick = () => setActiveNav(els.navChats);
     document.getElementById('close-qr').onclick = () => showQR(false);
@@ -604,6 +745,9 @@
     els.autoReply.onchange = (e) => toggleMute(e.target.checked);
     els.backfillBtn = document.getElementById('backfill-btn');
     els.backfillBtn.onclick = backfill;
+    els.archiveBtn.onclick = archiveChat;
+    els.unarchiveBtn.onclick = unarchiveChat;
+    els.deleteBtn.onclick = deleteChat;
     els.search.oninput = renderChats;
     els.tabs.forEach((tab) => tab.onclick = () => { document.querySelectorAll('.tab').forEach(t => t.classList.remove('active')); tab.classList.add('active'); renderChats(); });
     els.message.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
