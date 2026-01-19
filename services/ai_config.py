@@ -38,7 +38,7 @@ class AIConfig:
     REWRITE_DO_SAMPLE = False           # whether to use sampling in rewriting
 
     # === Content Filtering Settings ===
-    RESTRICTIVENESS_LEVEL = "balanced"  # restrictive, balanced, or open
+    RESTRICTIVENESS_LEVEL = "open"  # restrictive, balanced, or open
 
     # === Debug Settings ===
     SHOW_DEBUG = os.environ.get("SHOW_DEBUG", "false").lower() == "true"
