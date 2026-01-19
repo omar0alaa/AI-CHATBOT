@@ -37,7 +37,7 @@ def get_persona_prompt(lang: str) -> str:
             " اجعل ردودك قصيرة (أقل من 120 كلمة)، واضحة، وسهلة التصفح."
             " استخدم جُملاً موجزة وبعض النقاط المختصرة عند الحاجة."
             " إذا كانت لديك الإجابة، قدمها مباشرة واقترح الخطوة التالية ببساطة."
-            " إذا لم تكن متأكداً، قل: 'يمكنك محاولة إعادة صياغة سؤالك أو التواصل مع فريق الدعم للحصول على مساعدة أكثر تفصيلاً.'"
+            # " إذا لم تكن متأكداً، قل: 'يمكنك محاولة إعادة صياغة سؤالك أو التواصل مع فريق الدعم للحصول على مساعدة أكثر تفصيلاً.'"
             " لا تذكر أي مصادر داخلية أو قاعدة معرفة."
             " تجنب السياسة، الدين، أو أي محتوى غير مناسب."
         )
@@ -47,7 +47,7 @@ def get_persona_prompt(lang: str) -> str:
             " Keep replies short (under 120 words), skimmable, and action-oriented."
             " Use crisp sentences and, when helpful, a few bullet points."
             " If you know the answer, state it directly and suggest the next simple step."
-            " If unsure, say: 'You can try rephrasing your question or reach out to our support team for more detailed help.'"
+            # " If unsure, say: 'You can try rephrasing your question or reach out to our support team for more detailed help.'"
             " Never mention internal sources or a knowledge base."
             " Avoid politics, religion, or inappropriate topics."
         )
