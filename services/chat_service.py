@@ -59,6 +59,41 @@ class ChatService:
         
         log_debug(f"Final answer: {len(processed_answer)} characters")
         return processed_answer, final_history
+
+    def summarize_message(self, text, ui_lang=None):
+        #Generate a concise summary for provided text
+        if not text or not text.strip():
+            return ""
+
+        user_lang = self._detect_language(text, ui_lang)
+        if user_lang == 'ar':
+            prompt = (
+                "لخّص النص التالي في 3-5 نقاط قصيرة وواضحة. "
+                "لا تضف معلومات غير موجودة في النص:\n\n"
+                f"{text}"
+            )
+            fallback_message = "تعذر إنشاء ملخص في الوقت الحالي."
+        else:
+            prompt = (
+                "Summarize the following text in 3-5 short clear bullet points. "
+                "Do not add facts not present in the text:\n\n"
+                f"{text}"
+            )
+            fallback_message = "Unable to generate summary right now."
+
+        payload = {
+            "model": self.model_name,
+            "messages": [
+                {"role": "system", "content": "You are a concise summarization assistant."},
+                {"role": "user", "content": prompt},
+            ],
+            "max_tokens": min(max(ai_config.GROQ_MAX_TOKENS, 200), 500),
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "stream": False,
+        }
+
+        return self._make_groq_request(payload, fallback_message)
     
     def _detect_language(self, user_message, ui_lang):
         #Detect user message language

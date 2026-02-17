@@ -46,6 +46,15 @@ class AIConfig:
     # === Language Detection ===
     DEFAULT_LANGUAGE = "en"             # fallback language when detection fails
 
+    # === Azure Speech Settings ===
+    AZURE_SPEECH_KEY = os.getenv("AZURE_SPEECH_KEY", "")
+    AZURE_SPEECH_REGION = os.getenv("AZURE_SPEECH_REGION", "")
+    AZURE_SPEECH_ENDPOINT = os.getenv("AZURE_SPEECH_ENDPOINT", "")
+    AZURE_SPEECH_STT_DEFAULT_LOCALE = os.getenv("AZURE_SPEECH_STT_DEFAULT_LOCALE", "en-US")
+    AZURE_SPEECH_TTS_DEFAULT_VOICE_EN = os.getenv("AZURE_SPEECH_TTS_DEFAULT_VOICE_EN", "en-US-JennyNeural")
+    AZURE_SPEECH_TTS_DEFAULT_VOICE_AR = os.getenv("AZURE_SPEECH_TTS_DEFAULT_VOICE_AR", "ar-SA-ZariyahNeural")
+    FFMPEG_BINARY = os.getenv("FFMPEG_BINARY", "ffmpeg")
+
     @classmethod
     def get_max_history_messages(cls):
         #Get maximum total messages in chat history (exchanges * 2)
@@ -115,6 +124,9 @@ class AIConfig:
             "request_timeout": cls.GROQ_REQUEST_TIMEOUT,
             "restrictiveness_level": cls.RESTRICTIVENESS_LEVEL,
             "debug_enabled": cls.SHOW_DEBUG,
+            "azure_speech_enabled": bool(cls.AZURE_SPEECH_KEY and (cls.AZURE_SPEECH_REGION or cls.AZURE_SPEECH_ENDPOINT)),
+            "azure_speech_region": cls.AZURE_SPEECH_REGION,
+            "azure_speech_endpoint": cls.AZURE_SPEECH_ENDPOINT,
         }
 
 

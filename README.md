@@ -71,6 +71,67 @@ A web-based AI chatbot built with Python Flask and Ollama for local LLM inferenc
 - The AI always answers in the website's selected language (English or Arabic), regardless of the question's language.
 - All answers are formatted for clarity and professionalism.
 
+## Azure Speech APIs (STT + TTS)
+
+You can enable voice processing with Azure Speech Service.
+
+### Environment Variables
+
+Add to your `.env`:
+
+```
+AZURE_SPEECH_KEY=your_azure_speech_key
+AZURE_SPEECH_REGION=your_region   # e.g. eastus
+AZURE_SPEECH_ENDPOINT=https://your-region.api.cognitive.microsoft.com  # optional alternative to region
+AZURE_SPEECH_STT_DEFAULT_LOCALE=en-US
+AZURE_SPEECH_TTS_DEFAULT_VOICE_EN=en-US-JennyNeural
+AZURE_SPEECH_TTS_DEFAULT_VOICE_AR=ar-SA-ZariyahNeural
+```
+
+You can configure Azure Speech with either:
+- `AZURE_SPEECH_KEY` + `AZURE_SPEECH_REGION` (recommended), or
+- `AZURE_SPEECH_KEY` + `AZURE_SPEECH_ENDPOINT`.
+
+### 1) Voice Chat Endpoint
+
+`POST /api/voice/chat`
+
+Receives an audio note, runs STT, sends transcript to AI core, returns AI text reply and optional summary.
+
+Request:
+- `multipart/form-data`
+- `audio`: audio file
+- `lang`: `en` or `ar` (optional)
+- `summarize`: `true/false` (optional, default `false`)
+
+Response JSON:
+- `transcript`
+- `reply`
+- `summary_enabled`
+- `summary` (only when summarize=true)
+
+### 2) Text-to-Speech Endpoint
+
+`POST /api/voice/tts`
+
+Request JSON:
+
+```
+{
+   "text": "Hello from AI core",
+   "lang": "en",
+   "voice": "en-US-JennyNeural",
+   "base64": false,
+   "format": "mp3"
+}
+```
+
+- `format` is optional and supports:
+   - `mp3` (default)
+   - `ogg` / `opus` / `ogg-opus`
+- If `base64=false` (default), endpoint returns audio bytes with matching MIME type.
+- If `base64=true`, endpoint returns JSON with `audio_base64`, `mime_type`, and selected format info.
+
 ## Project Structure
 
 - `app.py`: Main Flask application (backend, SQLite/Ollama integration, endpoints)
