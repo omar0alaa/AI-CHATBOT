@@ -7,6 +7,14 @@ from services.ai_config import ai_config
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
+
+def _get_client_id(data=None, args=None):
+    data = data or {}
+    args = args or {}
+    client_id = data.get('client_id') or args.get('client_id') or 'youlearnt'
+    client_id = str(client_id).strip()
+    return client_id or 'youlearnt'
+
 # === Debug Management Routes ===
 
 @admin_bp.route('/debug/toggle', methods=['POST'])
@@ -62,14 +70,32 @@ def admin_db_page():
 @admin_bp.route('/api/bank', methods=['GET'])
 def admin_get_bank():
     # Get all knowledge bank entries
-    entries = database_service.get_all_entries()
+    client_id = _get_client_id(args=request.args)
+    entries = database_service.get_all_entries(client_id)
     return jsonify(entries)
+
+
+@admin_bp.route('/api/bank/clients', methods=['GET'])
+def admin_get_bank_clients():
+    # Backward-compatible admin endpoint for listing available client KB tables
+    clients = database_service.list_client_tables()
+    return jsonify({'clients': clients})
+
+
+@admin_bp.route('/api/bank/clients', methods=['POST'])
+def admin_create_bank_client():
+    # Backward-compatible admin endpoint for creating/ensuring a client KB table
+    data = request.get_json(silent=True) or {}
+    client_id = _get_client_id(data=data, args=request.args)
+    table = database_service.ensure_client_table(client_id)
+    return jsonify({'success': True, 'client_id': client_id, 'table': table})
 
 @admin_bp.route('/api/bank', methods=['POST'])
 def admin_add_bank():
     # Add new knowledge bank entry
     try:
         data = request.get_json()
+        client_id = _get_client_id(data=data, args=request.args)
         question_en = data.get('question_EN', '').strip()
         question_ar = data.get('question_AR', '').strip()
         answer_en = data.get('answer_EN', '').strip()
@@ -78,9 +104,9 @@ def admin_add_bank():
         if not question_en or not question_ar or not answer_en or not answer_ar:
             return jsonify({'error': 'Missing required fields (question_EN, question_AR, answer_EN, answer_AR)'}), 400
         
-        success = database_service.add_entry(question_en, question_ar, answer_en, answer_ar)
+        success = database_service.add_entry(question_en, question_ar, answer_en, answer_ar, client_id)
         if success:
-            return jsonify({'success': True})
+            return jsonify({'success': True, 'client_id': client_id})
         else:
             return jsonify({'error': 'Failed to add entry'}), 500
             
@@ -92,6 +118,7 @@ def admin_edit_bank(qa_id):
     # Edit existing knowledge bank entry
     try:
         data = request.get_json()
+        client_id = _get_client_id(data=data, args=request.args)
         question_en = data.get('question_EN', '').strip()
         question_ar = data.get('question_AR', '').strip()
         answer_en = data.get('answer_EN', '').strip()
@@ -100,9 +127,9 @@ def admin_edit_bank(qa_id):
         if not question_en or not question_ar or not answer_en or not answer_ar:
             return jsonify({'error': 'Missing required fields (question_EN, question_AR, answer_EN, answer_AR)'}), 400
         
-        success = database_service.update_entry(qa_id, question_en, question_ar, answer_en, answer_ar)
+        success = database_service.update_entry(qa_id, question_en, question_ar, answer_en, answer_ar, client_id)
         if success:
-            return jsonify({'success': True})
+            return jsonify({'success': True, 'client_id': client_id, 'id': qa_id})
         else:
             return jsonify({'error': 'Failed to update entry'}), 500
             
@@ -113,9 +140,11 @@ def admin_edit_bank(qa_id):
 def admin_delete_bank(qa_id):
     # Delete knowledge bank entry
     try:
-        success = database_service.delete_entry(qa_id)
+        data = request.get_json(silent=True) or {}
+        client_id = _get_client_id(data=data, args=request.args)
+        success = database_service.delete_entry(qa_id, client_id)
         if success:
-            return jsonify({'success': True})
+            return jsonify({'success': True, 'client_id': client_id, 'id': qa_id})
         else:
             return jsonify({'error': 'Failed to delete entry'}), 500
             

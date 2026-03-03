@@ -18,7 +18,7 @@ class ChatService:
         self.model_name = ai_config.GROQ_MODEL
         self.api_key = ai_config.GROQ_API_KEY
     
-    def process_message(self, user_message, ui_lang, chat_history):
+    def process_message(self, user_message, ui_lang, chat_history, client_id='youlearnt'):
         #Process a user message and return AI response
         log_info("========== NEW CHAT REQUEST ==========")
         log_debug(f"Received message: {user_message}")
@@ -43,7 +43,7 @@ class ChatService:
         updated_history = self._update_chat_history(chat_history, user_message, user_lang)
         
         # Get knowledge base context
-        contexts = self._get_knowledge_context(user_message, user_lang)
+        contexts = self._get_knowledge_context(user_message, user_lang, client_id)
         
         # Generate AI response
         answer = self._generate_ai_response(user_message, user_lang, contexts, updated_history)
@@ -121,10 +121,10 @@ class ChatService:
         
         return history
     
-    def _get_knowledge_context(self, user_message, user_lang):
+    def _get_knowledge_context(self, user_message, user_lang, client_id='youlearnt'):
         #Retrieve relevant context from knowledge base
         try:
-            contexts = get_answer_from_db(user_message, user_lang)
+            contexts = get_answer_from_db(user_message, user_lang, client_id)
             log_debug(f"Found {len(contexts)} contexts from database")
             if contexts:
                 for i, ctx in enumerate(contexts):

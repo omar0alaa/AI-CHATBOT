@@ -61,8 +61,18 @@
         <div class="card shadow-sm" style="background:var(--container-bg); color:var(--input-color); border-radius:16px;">
             <div class="card-body p-2 p-md-4">
                 <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-3 gap-2">
-                    <h4 class="mb-0" style="font-weight:600; color:var(--primary-color);">Knowledge Base</h4>
-                    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addModal"><i class="fas fa-plus me-1"></i> Add Q&A</button>
+                    <h4 class="mb-0" style="font-weight:600; color:var(--primary-color);">Knowledge Base <span class="badge bg-primary ms-1">Multi-client</span></h4>
+                    <div class="d-flex flex-column flex-md-row gap-2 align-items-stretch align-items-md-center">
+                        <div class="d-flex gap-2 align-items-center">
+                            <label for="client-select" class="mb-0" style="font-size:13px; color:var(--input-color);">Client</label>
+                            <select id="client-select" class="form-select form-select-sm" style="min-width:180px;"></select>
+                        </div>
+                        <div class="d-flex gap-2 align-items-center">
+                            <input id="new-client-id" type="text" class="form-control form-control-sm" placeholder="new_client_id" style="min-width:180px;" />
+                            <button id="create-client-btn" class="btn btn-outline-primary btn-sm" type="button">Create Client</button>
+                        </div>
+                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addModal"><i class="fas fa-plus me-1"></i> Add Q&A</button>
+                    </div>
                 </div>
                 <div class="table-responsive" style="max-height:60vh; min-height:200px; overflow-y:auto;">
                     <table id="qa-table" class="table table-bordered table-hover align-middle w-100" style="background:var(--container-bg);">
@@ -199,14 +209,61 @@
             }
         });
 
-    // Q&A logic
+    // Q&A logic (multi-client)
+    function getClientFromUrl() {
+        const params = new URLSearchParams(window.location.search);
+        return (params.get('client_id') || '').trim();
+    }
+
+    function setClientInUrl(clientId) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('client_id', clientId);
+        window.history.replaceState({}, '', url.toString());
+    }
+
+    function getSelectedClientId() {
+        return document.getElementById('client-select').value || 'youlearnt';
+    }
+
+    async function loadClients(preferredClientId = null) {
+        const select = document.getElementById('client-select');
+        const res = await fetch('/api/knowledge/clients');
+        const payload = await res.json();
+        const clients = payload.clients || [];
+
+        if (!clients.length) {
+            await fetch('/api/knowledge/clients', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ client_id: 'youlearnt' })
+            });
+            return loadClients(preferredClientId || 'youlearnt');
+        }
+
+        select.innerHTML = '';
+        clients.forEach(c => {
+            const option = document.createElement('option');
+            option.value = c.client_id;
+            option.textContent = c.client_id;
+            select.appendChild(option);
+        });
+
+        const selected = preferredClientId && [...select.options].some(o => o.value === preferredClientId)
+            ? preferredClientId
+            : select.options[0].value;
+        select.value = selected;
+        setClientInUrl(selected);
+    }
+
     function fetchQA() {
-        fetch('/admin/api/bank')
+        const clientId = getSelectedClientId();
+        fetch(`/api/knowledge/entries?client_id=${encodeURIComponent(clientId)}`)
             .then(res => res.json())
             .then(data => {
                 const tbody = document.querySelector('#qa-table tbody');
                 tbody.innerHTML = '';
-                data.forEach(row => {
+                const entries = data.entries || [];
+                entries.forEach(row => {
                     tbody.innerHTML += `
                     <tr data-id="${row.ID}">
                         <td>${row.ID}</td>
@@ -220,17 +277,44 @@
                         </td>
                     </tr>`;
                 });
+
+                if (!entries.length) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No entries for this client yet.</td></tr>';
+                }
             });
     }
-    fetchQA();
+
+    document.getElementById('client-select').addEventListener('change', function() {
+        setClientInUrl(getSelectedClientId());
+        fetchQA();
+    });
+
+    document.getElementById('create-client-btn').addEventListener('click', async function() {
+        const input = document.getElementById('new-client-id');
+        const client_id = (input.value || '').trim();
+        if (!client_id) return;
+
+        await fetch('/api/knowledge/clients', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ client_id })
+        });
+
+        input.value = '';
+        await loadClients(client_id);
+        fetchQA();
+    });
+
+    loadClients(getClientFromUrl()).then(fetchQA);
     // Modal form submit
     document.getElementById('add-form-modal').onsubmit = function(e) {
         e.preventDefault();
         const form = e.target;
-        fetch('/admin/api/bank', {
+        fetch('/api/knowledge/entries', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+                client_id: getSelectedClientId(),
                 question_EN: form.question_EN.value,
                 question_AR: form.question_AR.value,
                 answer_EN: form.answer_EN.value,
@@ -271,10 +355,11 @@
     // Edit modal form submit
     document.getElementById('edit-form-modal').onsubmit = function(e) {
         e.preventDefault();
-        fetch(`/admin/api/bank/edit/${window.editId}`, {
+        fetch(`/api/knowledge/entries/${window.editId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+                client_id: getSelectedClientId(),
                 question_EN: document.getElementById('edit-question-en').value,
                 question_AR: document.getElementById('edit-question-ar').value,
                 answer_EN: document.getElementById('edit-answer-en').value,
@@ -289,7 +374,7 @@
 
     // Delete modal confirm
     document.getElementById('confirm-delete-btn').onclick = function() {
-        fetch(`/admin/api/bank/delete/${window.deleteId}`, { method: 'DELETE' })
+        fetch(`/api/knowledge/entries/${window.deleteId}?client_id=${encodeURIComponent(getSelectedClientId())}`, { method: 'DELETE' })
             .then(() => {
                 fetchQA();
                 var deleteModal = bootstrap.Modal.getInstance(document.getElementById('deleteModal'));

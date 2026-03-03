@@ -71,6 +71,43 @@ A web-based AI chatbot built with Python Flask and Ollama for local LLM inferenc
 - The AI always answers in the website's selected language (English or Arabic), regardless of the question's language.
 - All answers are formatted for clarity and professionalism.
 
+## Multi-Client Knowledge Bases (Table per Client)
+
+The API now supports isolated knowledge tables per client so data does not cross between customers.
+
+- Default client: `youlearnt` (table: `youlearnt_bank`)
+- New clients use separate tables named `kb_<client_id>`
+- Select client in chat requests via `client_id`
+
+### Chat with selected client KB
+
+`POST /api/chat`
+
+```json
+{
+   "message": "How do you handle refunds?",
+   "lang": "en",
+   "client_id": "client_a"
+}
+```
+
+### Voice chat with selected client KB
+
+`POST /api/voice/chat` with `multipart/form-data`:
+- `audio` file
+- `lang`
+- `summarize`
+- `client_id`
+
+### Manage client tables and entries by API
+
+- `GET /api/knowledge/clients` → list client tables
+- `POST /api/knowledge/clients` with `{ "client_id": "client_a" }` → create/ensure table
+- `GET /api/knowledge/entries?client_id=client_a` → list entries for one client
+- `POST /api/knowledge/entries` → add entry to one client table
+- `PUT /api/knowledge/entries/<id>` → update entry in one client table
+- `DELETE /api/knowledge/entries/<id>?client_id=client_a` → delete from one client table
+
 ## Azure Speech APIs (STT + TTS)
 
 You can enable voice processing with Azure Speech Service.
