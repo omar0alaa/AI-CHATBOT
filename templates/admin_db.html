@@ -71,7 +71,27 @@
                             <input id="new-client-id" type="text" class="form-control form-control-sm" placeholder="new_client_id" style="min-width:180px;" />
                             <button id="create-client-btn" class="btn btn-outline-primary btn-sm" type="button">Create Client</button>
                         </div>
+                        <button id="refresh-clients-btn" class="btn btn-outline-secondary btn-sm" type="button">Refresh</button>
+                        <button id="clear-client-btn" class="btn btn-outline-danger btn-sm" type="button">Clear Client KB</button>
                         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addModal"><i class="fas fa-plus me-1"></i> Add Q&A</button>
+                    </div>
+                </div>
+                <div class="d-flex flex-column flex-md-row gap-2 align-items-md-center mb-3">
+                    <div id="client-summary" class="small text-muted">Client: - | Entries: -</div>
+                    <div id="client-action-status" class="small" style="color: var(--primary-color);"></div>
+                </div>
+                <div class="card mb-3" style="background:rgba(0,0,0,0.02); border:1px solid var(--border, #ddd);">
+                    <div class="card-body p-2 p-md-3">
+                        <div class="d-flex flex-column flex-md-row gap-2 align-items-stretch align-items-md-center">
+                            <label class="mb-0 small" for="kb-import-file">Import file to selected client KB</label>
+                            <input id="kb-import-file" type="file" class="form-control form-control-sm" accept=".pdf,.docx,.txt" style="max-width:360px;" />
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="replace-existing" />
+                                <label class="form-check-label small" for="replace-existing">Replace existing entries</label>
+                            </div>
+                            <button id="kb-import-btn" class="btn btn-success btn-sm" type="button">Upload & Auto-Fill</button>
+                        </div>
+                        <div id="kb-import-status" class="small mt-2 text-muted"></div>
                     </div>
                 </div>
                 <div class="table-responsive" style="max-height:60vh; min-height:200px; overflow-y:auto;">
@@ -210,6 +230,8 @@
         });
 
     // Q&A logic (multi-client)
+    let clientMetaMap = {};
+
     function getClientFromUrl() {
         const params = new URLSearchParams(window.location.search);
         return (params.get('client_id') || '').trim();
@@ -223,6 +245,20 @@
 
     function getSelectedClientId() {
         return document.getElementById('client-select').value || 'youlearnt';
+    }
+
+    function setActionStatus(message, isError = false) {
+        const node = document.getElementById('client-action-status');
+        node.textContent = message || '';
+        node.style.color = isError ? '#dc3545' : 'var(--primary-color)';
+    }
+
+    function renderClientSummary(entryCountOverride = null) {
+        const clientId = getSelectedClientId();
+        const count = entryCountOverride !== null
+            ? entryCountOverride
+            : (clientMetaMap[clientId]?.entry_count ?? 0);
+        document.getElementById('client-summary').textContent = `Client: ${clientId} | Entries: ${count}`;
     }
 
     async function loadClients(preferredClientId = null) {
@@ -241,11 +277,13 @@
         }
 
         select.innerHTML = '';
+        clientMetaMap = {};
         clients.forEach(c => {
             const option = document.createElement('option');
             option.value = c.client_id;
-            option.textContent = c.client_id;
+            option.textContent = `${c.client_id} (${c.entry_count ?? 0})`;
             select.appendChild(option);
+            clientMetaMap[c.client_id] = c;
         });
 
         const selected = preferredClientId && [...select.options].some(o => o.value === preferredClientId)
@@ -253,6 +291,7 @@
             : select.options[0].value;
         select.value = selected;
         setClientInUrl(selected);
+        renderClientSummary();
     }
 
     function fetchQA() {
@@ -281,11 +320,14 @@
                 if (!entries.length) {
                     tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No entries for this client yet.</td></tr>';
                 }
+
+                renderClientSummary(entries.length);
             });
     }
 
     document.getElementById('client-select').addEventListener('change', function() {
         setClientInUrl(getSelectedClientId());
+        setActionStatus('');
         fetchQA();
     });
 
@@ -294,14 +336,85 @@
         const client_id = (input.value || '').trim();
         if (!client_id) return;
 
-        await fetch('/api/knowledge/clients', {
+        const res = await fetch('/api/knowledge/clients', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ client_id })
         });
+        const data = await res.json();
+        if (!res.ok || data.error) {
+            setActionStatus(data.error || 'Failed to create client', true);
+            return;
+        }
 
         input.value = '';
         await loadClients(client_id);
+        fetchQA();
+        setActionStatus(`Client '${client_id}' is ready.`);
+    });
+
+    document.getElementById('refresh-clients-btn').addEventListener('click', async function() {
+        const current = getSelectedClientId();
+        await loadClients(current);
+        fetchQA();
+        setActionStatus('Client list refreshed.');
+    });
+
+    document.getElementById('clear-client-btn').addEventListener('click', async function() {
+        const clientId = getSelectedClientId();
+        if (!confirm(`Clear all KB entries for client '${clientId}'? This cannot be undone.`)) {
+            return;
+        }
+
+        const res = await fetch('/api/knowledge/entries/clear', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ client_id: clientId })
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) {
+            setActionStatus(data.error || 'Failed to clear KB', true);
+            return;
+        }
+
+        await loadClients(clientId);
+        fetchQA();
+        setActionStatus(`Cleared KB for '${clientId}'.`);
+    });
+
+    document.getElementById('kb-import-btn').addEventListener('click', async function() {
+        const fileInput = document.getElementById('kb-import-file');
+        const statusNode = document.getElementById('kb-import-status');
+        const file = fileInput.files?.[0];
+        const clientId = getSelectedClientId();
+        const replaceExisting = document.getElementById('replace-existing').checked;
+
+        if (!file) {
+            statusNode.textContent = 'Please select a PDF/DOCX/TXT file first.';
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('client_id', clientId);
+        formData.append('replace_existing', String(replaceExisting));
+
+        statusNode.textContent = 'Import in progress... this may take a while for large files.';
+        setActionStatus('');
+
+        const res = await fetch('/api/knowledge/import', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+
+        if (!res.ok || data.error) {
+            statusNode.textContent = `Import failed: ${data.error || 'Unknown error'}`;
+            return;
+        }
+
+        statusNode.textContent = `Imported ${data.inserted_entries} entries for '${data.client_id}' from ${data.source_file}.`;
+        await loadClients(clientId);
         fetchQA();
     });
 

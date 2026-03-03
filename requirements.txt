@@ -10,3 +10,5 @@ werkzeug
 transformers
 torch
 pyodbc
+pypdf
+python-docx

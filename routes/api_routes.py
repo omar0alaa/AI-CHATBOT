@@ -4,6 +4,7 @@ from flask import Blueprint, request, jsonify, session, send_file
 from services.chat_service import chat_service
 from services.speech_service import speech_service
 from services.database_service import database_service
+from services.kb_ingestion_service import kb_ingestion_service
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
@@ -215,6 +216,19 @@ def knowledge_entries_delete(qa_id):
         return jsonify({'error': f'Internal server error: {str(e)}'}), 500
 
 
+@api_bp.route('/knowledge/entries/clear', methods=['POST'])
+def knowledge_entries_clear():
+    try:
+        data = request.get_json(silent=True) or {}
+        client_id = _get_client_id(data=data, args=request.args)
+        success = database_service.clear_client_entries(client_id)
+        if not success:
+            return jsonify({'error': 'Failed to clear entries'}), 500
+        return jsonify({'success': True, 'client_id': client_id})
+    except Exception as e:
+        return jsonify({'error': f'Internal server error: {str(e)}'}), 500
+
+
 @api_bp.route('/voice/tts', methods=['POST'])
 def voice_tts():
     """
@@ -264,5 +278,46 @@ def voice_tts():
         return jsonify({'error': str(e)}), 502
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'error': f'Internal server error: {str(e)}'}), 500
+
+
+@api_bp.route('/knowledge/import', methods=['POST'])
+def knowledge_import_from_file():
+    """
+    Upload a PDF/DOCX/TXT file and auto-populate the selected client KB table.
+    multipart/form-data fields:
+      - file: required
+      - client_id: optional (default: youlearnt)
+      - replace_existing: optional bool (default: false)
+    """
+    try:
+        upload = request.files.get('file')
+        if not upload:
+            return jsonify({'error': 'No file provided. Use multipart/form-data field: file'}), 400
+
+        file_name = upload.filename or 'uploaded_file'
+        file_bytes = upload.read()
+        if not file_bytes:
+            return jsonify({'error': 'Uploaded file is empty'}), 400
+
+        client_id = _get_client_id(form=request.form, args=request.args)
+        replace_existing = _to_bool(
+            request.form.get('replace_existing', request.args.get('replace_existing')),
+            default=False,
+        )
+
+        result = kb_ingestion_service.ingest_file_to_kb(
+            file_name=file_name,
+            file_bytes=file_bytes,
+            client_id=client_id,
+            replace_existing=replace_existing,
+        )
+        return jsonify({'success': True, **result})
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except RuntimeError as e:
+        return jsonify({'error': str(e)}), 502
     except Exception as e:
         return jsonify({'error': f'Internal server error: {str(e)}'}), 500

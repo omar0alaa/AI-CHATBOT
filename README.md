@@ -108,6 +108,32 @@ The API now supports isolated knowledge tables per client so data does not cross
 - `PUT /api/knowledge/entries/<id>` → update entry in one client table
 - `DELETE /api/knowledge/entries/<id>?client_id=client_a` → delete from one client table
 
+### Auto-fill KB from PDF/Word/TXT (AI ingestion)
+
+`POST /api/knowledge/import` (multipart/form-data)
+
+Fields:
+- `file` (required): `.pdf` / `.docx` / `.txt`
+- `client_id` (optional): target client table (default `youlearnt`)
+- `replace_existing` (optional): `true|false` (default `false`)
+
+What it does:
+1) Extracts text from file
+2) Chunks large content
+3) Uses AI to generate structured bilingual Q&A pairs
+4) Inserts entries into selected client table
+
+Example:
+
+```bash
+curl -X POST "http://127.0.0.1:5000/api/knowledge/import" \
+   -F "file=@/path/client_brief.pdf" \
+   -F "client_id=client_a" \
+   -F "replace_existing=true"
+```
+
+Response includes counts (`generated_entries`, `inserted_entries`) and a `preview`.
+
 ## Azure Speech APIs (STT + TTS)
 
 You can enable voice processing with Azure Speech Service.

@@ -99,14 +99,19 @@ class DatabaseService:
             c = conn.cursor()
             c.execute("SELECT name FROM sqlite_master WHERE type='table' AND (name='youlearnt_bank' OR name LIKE 'kb_%') ORDER BY name ASC")
             names = [row[0] for row in c.fetchall()]
-            conn.close()
 
             clients = []
             for name in names:
+                try:
+                    c.execute(f'SELECT COUNT(1) FROM {name}')
+                    entry_count = int(c.fetchone()[0])
+                except Exception:
+                    entry_count = 0
                 if name == 'youlearnt_bank':
-                    clients.append({'client_id': 'youlearnt', 'table': name})
+                    clients.append({'client_id': 'youlearnt', 'table': name, 'entry_count': entry_count})
                 elif name.startswith('kb_'):
-                    clients.append({'client_id': name[3:], 'table': name})
+                    clients.append({'client_id': name[3:], 'table': name, 'entry_count': entry_count})
+            conn.close()
             return clients
         except Exception as e:
             log_error(f"Failed to list client tables: {e}")
@@ -204,6 +209,50 @@ class DatabaseService:
         except Exception as e:
             log_error(f"Failed to delete entry ID {qa_id}: {e}")
             return False
+
+    def clear_client_entries(self, client_id=DEFAULT_CLIENT_ID):
+        #Delete all entries for a client table
+        try:
+            table = self.ensure_client_table(client_id)
+            conn = sqlite3.connect(self.db_path)
+            c = conn.cursor()
+            c.execute(f'DELETE FROM {table}')
+            conn.commit()
+            conn.close()
+            log_info(f"Cleared all entries from {table}")
+            return True
+        except Exception as e:
+            log_error(f"Failed clearing entries for client {client_id}: {e}")
+            return False
+
+    def add_entries_bulk(self, entries, client_id=DEFAULT_CLIENT_ID):
+        #Bulk insert entries [{question_EN, question_AR, answer_EN, answer_AR}, ...]
+        if not entries:
+            return 0
+        try:
+            table = self.ensure_client_table(client_id)
+            conn = sqlite3.connect(self.db_path)
+            c = conn.cursor()
+            c.executemany(
+                f'INSERT INTO {table} (question_EN, question_AR, answer_EN, answer_AR) VALUES (?, ?, ?, ?)',
+                [
+                    (
+                        (entry.get('question_EN') or '').strip(),
+                        (entry.get('question_AR') or '').strip(),
+                        (entry.get('answer_EN') or '').strip(),
+                        (entry.get('answer_AR') or '').strip(),
+                    )
+                    for entry in entries
+                ]
+            )
+            inserted = c.rowcount if c.rowcount and c.rowcount > 0 else len(entries)
+            conn.commit()
+            conn.close()
+            log_info(f"Bulk inserted {inserted} entries into {table}")
+            return inserted
+        except Exception as e:
+            log_error(f"Failed bulk insert for client {client_id}: {e}")
+            return 0
 
 
 # Create singleton instance
