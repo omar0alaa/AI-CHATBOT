@@ -135,15 +135,19 @@ class DatabaseService:
                 q_en_lower = (q_en or '').lower()
                 q_ar_lower = (q_ar or '').lower()
                 a_en_lower = (a_en or '').lower()
+                a_ar_lower = (a_ar or '').lower()
+                
+                # Full text of this KB entry for substring searches
+                full_kb_text = f'{q_en_lower} {q_ar_lower} {a_en_lower} {a_ar_lower}'
                 
                 # 1) SequenceMatcher on question text
                 seq_en = SequenceMatcher(None, msg_lower, q_en_lower).ratio()
                 seq_ar = SequenceMatcher(None, msg_lower, q_ar_lower).ratio()
                 seq_score = max(seq_en, seq_ar)
                 
-                # 2) Keyword overlap scoring (words in common / total words)
+                # 2) Exact keyword overlap (words in common / total user words)
                 q_words = set(re.findall(r'[a-z0-9\u0600-\u06ff]{2,}', q_en_lower + ' ' + q_ar_lower))
-                a_words = set(re.findall(r'[a-z0-9\u0600-\u06ff]{2,}', a_en_lower))
+                a_words = set(re.findall(r'[a-z0-9\u0600-\u06ff]{2,}', a_en_lower + ' ' + a_ar_lower))
                 all_kb_words = q_words | a_words
                 
                 if msg_words and all_kb_words:
@@ -152,8 +156,22 @@ class DatabaseService:
                 else:
                     keyword_score = 0.0
                 
-                # 3) Combine: take the higher of the two approaches
-                final_score = max(seq_score, keyword_score * 0.85)
+                # 3) Substring matching (handles Arabic morphology: كابل in كابلات)
+                #    Forward: user word appears inside KB text
+                #    Reverse: KB word appears inside user message
+                substring_hits = 0
+                for w in msg_words:
+                    if len(w) >= 3 and w in full_kb_text:
+                        substring_hits += 1
+                for w in all_kb_words:
+                    if len(w) >= 3 and w in msg_lower:
+                        substring_hits += 1
+                        break  # one reverse hit is enough to boost
+                
+                substring_score = min(substring_hits / max(len(msg_words), 1), 1.0)
+                
+                # 4) Combine: take the best signal
+                final_score = max(seq_score, keyword_score * 0.85, substring_score * 0.8)
                 
                 answer = a_ar if user_lang == 'ar' else a_en
                 scored.append((final_score, q_en, answer))

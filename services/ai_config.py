@@ -28,7 +28,7 @@ class AIConfig:
 
     # === Knowledge Base Settings ===
     SIMILARITY_THRESHOLD = 0.35          # minimum similarity for knowledge base matches (0.0-1.0)
-    MAX_KNOWLEDGE_CONTEXTS = 5          # maximum number of knowledge base results to use
+    MAX_KNOWLEDGE_CONTEXTS = 10          # maximum number of knowledge base results to use
 
     # === Chat History Settings ===
     MAX_CHAT_EXCHANGES = 5              # number of user-AI exchanges to keep in history

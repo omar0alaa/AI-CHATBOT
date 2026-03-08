@@ -270,10 +270,30 @@ class ChatService:
             prompt = f"{lang_instruction}\n\nAvailable Information:\n{context_str}\n\nUser Question: {user_message}\n\nIMPORTANT: Answer ONLY based on the Available Information above. Do NOT invent or assume products, services, or details that are not in the Available Information. If the information doesn't fully answer the question, say what you know from the data and suggest the user ask about a specific product or category. Never make up product names, brands, or specifications."
         
         # Build OpenAI-compatible message payload for Groq
-        messages = [
-            {"role": "system", "content": lang_instruction},
-            {"role": "user", "content": prompt},
-        ]
+        # Use actual chat history so the AI remembers the conversation
+        messages = list(chat_history)  # already has system + previous user/assistant pairs + current user msg
+        
+        # Inject KB context and instructions into the last user message
+        if messages and messages[-1]['role'] == 'user':
+            original_user_msg = messages[-1]['content']
+            if contexts:
+                context_str = "\n".join([f"- {c}" for c in contexts])
+                enhanced_msg = (
+                    f"[Knowledge Base Context]\n{context_str}\n\n"
+                    f"[User Question]\n{original_user_msg}\n\n"
+                    f"[Instructions] Answer based on the Knowledge Base Context above and our conversation history. "
+                    f"Do NOT invent products, services, or details not in the context. "
+                    f"If the user is following up on a previous message, use the conversation history to understand what they mean."
+                )
+            elif is_greeting or is_help_request:
+                enhanced_msg = original_user_msg  # keep as-is, persona handles it
+            else:
+                enhanced_msg = (
+                    f"{original_user_msg}\n\n"
+                    f"[Instructions] If this relates to our previous conversation, answer using that context. "
+                    f"Otherwise provide a helpful response. Do NOT invent product names or specifications."
+                )
+            messages[-1] = {"role": "user", "content": enhanced_msg}
 
         payload = {
             "model": self.model_name,
