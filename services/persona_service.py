@@ -49,9 +49,9 @@ def get_persona_fallback_prompt(lang, user_message, client_name='our service', c
             "- Only answer as a specialized professional support agent.\n"
             "- Make your response brief and welcoming."
         )
-            return _apply_custom_persona(prompt, custom_persona, 'en')
+        return _apply_custom_persona(prompt, custom_persona, 'en')
 
-        def get_persona_prompt(lang: str, client_name: str = 'our service', custom_persona: str = None) -> str:
+def get_persona_prompt(lang: str, client_name: str = 'our service', custom_persona: str = None) -> str:
     #Return the system prompt/persona for the AI in the specified language ('en' or 'ar')
     if lang == 'ar':
         prompt = (
