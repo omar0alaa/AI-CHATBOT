@@ -213,7 +213,8 @@ class KBIngestionService:
             '3) If the content does not clearly support a full Q&A, skip it.\n'
             '4) Avoid duplicates and near-duplicates.\n'
             '5) Prefer high-value product, category, and catalog information.\n'
-            '6) If products are listed, create multiple Q&As per product: identity, specs, features where possible.\n'
+            '6) When you see a clear product/SKU row (like "PP-XXXX"), create at least one Q&A that lists '
+            'its main specifications and another that lists its key features, if available.\n'
             '7) When answering, repeat the SKU and product name in the answer whenever available.\n'
             '8) If a field like price or warranty is NOT present, do not mention it.\n\n'
             f'Chunk {chunk_index}/{total_chunks}:\n{chunk_text}'
@@ -245,12 +246,16 @@ class KBIngestionService:
             'name_EN, name_AR, details_EN, details_AR\n\n'
             'Guidelines:\n'
             '1) Include only products explicitly mentioned in this chunk.\n'
-            '2) In details_EN, write 1-3 sentences summarizing SKU, category, key specs '
-            '(capacity/power/resolution/etc.), and main features.\n'
-            '3) If the SKU or exact English name is visible, include it in name_EN.\n'
-            '4) If Arabic is not present in the text, translate it to arabic.\n'
-            '5) Do not invent specs or categories; only use information in the text.\n'
-            '6) If no products/services exist in this chunk, return [].\n\n'
+            '2) In details_EN, write 2-4 sentences summarizing:\n'
+            '   - SKU and product name\n'
+            '   - Product type/category (for example: power bank, car charger, dashcam)\n'
+            '   - Key technical specs (capacity in mAh, power in W, ports, protocols, resolution, battery life)\n'
+            '   - 2-3 main features (for example: wireless charging, 4G, Wi-Fi 6, ENC, night vision)\n'
+            '3) Use numbers and units exactly as in the text (mAh, W, V, A, mm, ml, etc.).\n'
+            '4) If the SKU or exact English name is visible, include it in name_EN.\n'
+            '5) If Arabic is not present in the text, translate the English name and details to Arabic.\n'
+            '6) Do not invent specs or categories; only use information in the text.\n'
+            '7) If no products/services exist in this chunk, return [].\n\n'
             f'Chunk {chunk_index}/{total_chunks}:\n{chunk_text}'
         )
 
@@ -447,11 +452,48 @@ class KBIngestionService:
     def _normalize_products(self, products):
         seen = set()
         out = []
+        category_like_names = {
+            'power banks',
+            'car chargers',
+            'travel chargers',
+            'chargers',
+            'power bank',
+            'car charger',
+            'travel charger',
+        }
+
+        def _is_low_quality_name(name, details_en):
+            candidate = re.sub(r'\s+', ' ', (name or '').strip())
+            if not candidate:
+                return True
+
+            lowered = candidate.lower().strip(' .-_:;()[]{}')
+            if lowered in category_like_names:
+                return True
+
+            if re.fullmatch(r'(new|hot|special\s+offer|offer)', lowered, flags=re.IGNORECASE):
+                return True
+
+            has_sku_like = bool(re.search(r'[A-Za-z]{1,6}-[A-Za-z0-9]{2,}', candidate))
+            if not has_sku_like and not (details_en or '').strip():
+                words = re.findall(r'[A-Za-z0-9\u0600-\u06FF]+', candidate)
+                if len(words) <= 4:
+                    return True
+
+            return False
+
         for product in products:
             name_en = (product.get('name_EN') or '').strip()
             name_ar = (product.get('name_AR') or '').strip()
             if not name_en and not name_ar:
                 continue
+
+            details_en = (product.get('details_EN') or '').strip()
+            details_ar = (product.get('details_AR') or '').strip()
+
+            if _is_low_quality_name(name_en or name_ar, details_en):
+                continue
+
             key = (name_en.lower(), name_ar.lower())
             if key in seen:
                 continue
@@ -459,8 +501,8 @@ class KBIngestionService:
             out.append({
                 'name_EN': name_en,
                 'name_AR': name_ar,
-                'details_EN': (product.get('details_EN') or '').strip(),
-                'details_AR': (product.get('details_AR') or '').strip(),
+                'details_EN': details_en,
+                'details_AR': details_ar,
             })
         return out
 
@@ -486,8 +528,19 @@ class KBIngestionService:
         for product in products:
             name_en = product.get('name_EN') or product.get('name_AR') or 'this product'
             name_ar = product.get('name_AR') or product.get('name_EN') or 'هذا المنتج'
-            details_en = product.get('details_EN') or f'{name_en} is available in our catalog.'
-            details_ar = product.get('details_AR') or f'{name_ar} متاح ضمن منتجاتنا.'
+            details_en = (product.get('details_EN') or '').strip()
+            details_ar = (product.get('details_AR') or '').strip()
+
+            if not details_en:
+                details_en = (
+                    f'{name_en} is one of the products listed in the catalog. '
+                    f'Please ask for specifications or features to get more details.'
+                )
+            if not details_ar:
+                details_ar = (
+                    f'{name_ar} هو أحد المنتجات المذكورة في الكتالوج. '
+                    f'يمكنك طلب المواصفات أو المميزات للحصول على تفاصيل أكثر.'
+                )
 
             entries.append({
                 'question_EN': f'Tell me about {name_en}.',
