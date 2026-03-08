@@ -104,7 +104,7 @@ class KBIngestionService:
             raise ValueError('No extractable text found in file')
 
         _progress(12, 'chunking', 'Chunking extracted content')
-        chunks = self._chunk_text(text, max_chars=12000, overlap=400)
+        chunks = self._chunk_text(text, max_chars=6000, overlap=300)
         all_entries = []
         all_products = []
         for idx, chunk in enumerate(chunks):
@@ -360,6 +360,57 @@ class KBIngestionService:
                 raw = raw.replace('```json', '').replace('```', '').strip()
         return raw
 
+    def _repair_truncated_json(self, raw):
+        """Attempt to salvage complete JSON objects from a truncated JSON array.
+        When the LLM runs out of tokens, the response is cut off mid-object.
+        We find the last complete object and close the array."""
+        start = raw.find('[')
+        if start == -1:
+            return None
+
+        # Find the last complete object by looking for }, followed by optional whitespace
+        # then either another { or an incomplete one
+        array_content = raw[start:]
+
+        # Try progressively shorter substrings until we find valid JSON
+        # Look for the last },  or }\n pattern (end of a complete object in the array)
+        last_good = -1
+        brace_depth = 0
+        in_string = False
+        escape_next = False
+
+        for i, ch in enumerate(array_content):
+            if escape_next:
+                escape_next = False
+                continue
+            if ch == '\\':
+                if in_string:
+                    escape_next = True
+                continue
+            if ch == '"' and not escape_next:
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == '{':
+                brace_depth += 1
+            elif ch == '}':
+                brace_depth -= 1
+                if brace_depth == 0:
+                    last_good = i
+
+        if last_good > 0:
+            repaired = array_content[:last_good + 1] + ']'
+            try:
+                result = json.loads(repaired)
+                if isinstance(result, list) and len(result) > 0:
+                    log_info(f'Repaired truncated JSON: salvaged {len(result)} complete objects')
+                    return result
+            except Exception:
+                pass
+
+        return None
+
     def _parse_entries_json(self, content):
         raw = self._clean_json_response(content)
         log_debug(f'Parsing entries from LLM response ({len(raw)} chars): {raw[:300]}...')
@@ -374,10 +425,16 @@ class KBIngestionService:
                 try:
                     parsed = json.loads(raw[start:end + 1])
                 except Exception as e:
-                    log_error(f'Failed to parse entries JSON: {e} — raw: {raw[:500]}')
-                    parsed = []
+                    log_error(f'Failed to parse entries JSON: {e}')
+                    parsed = self._repair_truncated_json(raw)
+            elif start != -1:
+                # Has [ but no ] — truncated response
+                log_info('LLM response was truncated (no closing ]). Attempting repair...')
+                parsed = self._repair_truncated_json(raw)
             else:
                 log_error(f'No JSON array found in LLM response: {raw[:500]}')
+
+            if parsed is None:
                 parsed = []
 
         if not isinstance(parsed, list):
@@ -441,10 +498,15 @@ class KBIngestionService:
                 try:
                     parsed = json.loads(raw[start:end + 1])
                 except Exception as e:
-                    log_error(f'Failed to parse products JSON: {e} — raw: {raw[:500]}')
-                    parsed = []
+                    log_error(f'Failed to parse products JSON: {e}')
+                    parsed = self._repair_truncated_json(raw)
+            elif start != -1:
+                log_info('Products LLM response was truncated. Attempting repair...')
+                parsed = self._repair_truncated_json(raw)
             else:
                 log_error(f'No JSON array found in products response: {raw[:500]}')
+
+            if parsed is None:
                 parsed = []
 
         if not isinstance(parsed, list):
