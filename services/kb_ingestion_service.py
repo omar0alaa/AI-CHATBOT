@@ -125,9 +125,18 @@ class KBIngestionService:
         all_entries.extend(catalog_entries)
 
         _progress(82, 'normalizing', 'Normalizing and de-duplicating entries')
+        log_info(f'Total raw entries before dedupe: {len(all_entries)}, products detected: {len(product_rows)}')
         normalized = self._normalize_and_dedupe(all_entries)
+        log_info(f'After dedupe: {len(normalized)} entries')
         if not normalized:
-            raise RuntimeError('AI did not return valid KB entries from the file content')
+            log_error(f'Zero entries survived. Raw entries count was {len(all_entries)}. '
+                      f'Text length: {len(text)}, chunks: {len(chunks)}, products: {len(product_rows)}')
+            raise RuntimeError(
+                f'AI did not return valid KB entries. '
+                f'Text extracted: {len(text)} chars, {len(chunks)} chunks processed, '
+                f'{len(all_entries)} raw entries generated but none passed validation. '
+                f'Check server logs for details.'
+            )
 
         if replace_existing:
             _progress(88, 'clearing_existing', 'Clearing existing client KB entries')
@@ -232,9 +241,13 @@ class KBIngestionService:
             'stream': False,
         }
 
-        content = self._call_llm(payload)
+        try:
+            content = self._call_llm(payload)
+        except Exception as e:
+            log_error(f'Chunk {chunk_index}/{total_chunks} LLM call failed: {e}')
+            return []
         entries = self._parse_entries_json(content)
-        log_debug(f'Chunk {chunk_index}/{total_chunks} generated entries: {len(entries)}')
+        log_info(f'Chunk {chunk_index}/{total_chunks} generated {len(entries)} entries')
         return entries
 
     def _extract_products_from_chunk(self, chunk_text, chunk_index=1, total_chunks=1):
@@ -269,9 +282,13 @@ class KBIngestionService:
             'stream': False,
         }
 
-        content = self._call_llm(payload)
+        try:
+            content = self._call_llm(payload)
+        except Exception as e:
+            log_error(f'Chunk {chunk_index}/{total_chunks} product extraction failed: {e}')
+            return []
         products = self._parse_products_json(content)
-        log_debug(f'Chunk {chunk_index}/{total_chunks} detected products: {len(products)}')
+        log_info(f'Chunk {chunk_index}/{total_chunks} detected {len(products)} products')
         return products
 
     def _extract_products_from_full_text(self, text):
@@ -330,11 +347,22 @@ class KBIngestionService:
             return '[]'
         return (choices[0].get('message', {}) or {}).get('content', '[]') or '[]'
 
-    def _parse_entries_json(self, content):
+    def _clean_json_response(self, content):
+        """Strip markdown fences and extract the JSON array from LLM output."""
         raw = (content or '').strip()
-        if raw.startswith('```'):
-            raw = raw.strip('`')
-            raw = raw.replace('json\n', '', 1)
+        # Remove markdown code fences
+        if '```' in raw:
+            # Extract content between fences
+            match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', raw, re.DOTALL)
+            if match:
+                raw = match.group(1).strip()
+            else:
+                raw = raw.replace('```json', '').replace('```', '').strip()
+        return raw
+
+    def _parse_entries_json(self, content):
+        raw = self._clean_json_response(content)
+        log_debug(f'Parsing entries from LLM response ({len(raw)} chars): {raw[:300]}...')
 
         parsed = None
         try:
@@ -345,12 +373,15 @@ class KBIngestionService:
             if start != -1 and end != -1 and end > start:
                 try:
                     parsed = json.loads(raw[start:end + 1])
-                except Exception:
+                except Exception as e:
+                    log_error(f'Failed to parse entries JSON: {e} — raw: {raw[:500]}')
                     parsed = []
             else:
+                log_error(f'No JSON array found in LLM response: {raw[:500]}')
                 parsed = []
 
         if not isinstance(parsed, list):
+            log_error(f'Parsed result is not a list: {type(parsed)}')
             return []
 
         entries = []
@@ -361,13 +392,23 @@ class KBIngestionService:
             q_ar = (item.get('question_AR') or '').strip()
             a_en = (item.get('answer_EN') or '').strip()
             a_ar = (item.get('answer_AR') or '').strip()
-            if q_en and q_ar and a_en and a_ar:
-                entries.append({
-                    'question_EN': q_en,
-                    'question_AR': q_ar,
-                    'answer_EN': a_en,
-                    'answer_AR': a_ar,
-                })
+
+            # Must have at least English Q&A; auto-fill Arabic if missing
+            if not q_en or not a_en:
+                continue
+            if not q_ar:
+                q_ar = q_en  # fallback: use English as Arabic placeholder
+            if not a_ar:
+                a_ar = a_en  # fallback: use English as Arabic placeholder
+
+            entries.append({
+                'question_EN': q_en,
+                'question_AR': q_ar,
+                'answer_EN': a_en,
+                'answer_AR': a_ar,
+            })
+
+        log_debug(f'Parsed {len(entries)} valid entries from {len(parsed)} raw items')
         return entries
 
     def _normalize_and_dedupe(self, entries):
@@ -387,10 +428,8 @@ class KBIngestionService:
         return out
 
     def _parse_products_json(self, content):
-        raw = (content or '').strip()
-        if raw.startswith('```'):
-            raw = raw.strip('`')
-            raw = raw.replace('json\n', '', 1)
+        raw = self._clean_json_response(content)
+        log_debug(f'Parsing products from LLM response ({len(raw)} chars): {raw[:300]}...')
 
         parsed = None
         try:
@@ -401,9 +440,11 @@ class KBIngestionService:
             if start != -1 and end != -1 and end > start:
                 try:
                     parsed = json.loads(raw[start:end + 1])
-                except Exception:
+                except Exception as e:
+                    log_error(f'Failed to parse products JSON: {e} — raw: {raw[:500]}')
                     parsed = []
             else:
+                log_error(f'No JSON array found in products response: {raw[:500]}')
                 parsed = []
 
         if not isinstance(parsed, list):
