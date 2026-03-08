@@ -127,22 +127,42 @@ class DatabaseService:
             rows = c.fetchall()
             conn.close()
             
-            # Find top 3 most similar Q&A pairs
+            msg_lower = user_message.lower().strip()
+            msg_words = set(re.findall(r'[a-z0-9\u0600-\u06ff]{2,}', msg_lower))
+            
             scored = []
             for q_en, q_ar, a_en, a_ar in rows:
-                # Compare with both English and Arabic questions
-                score_en = SequenceMatcher(None, user_message.lower(), q_en.lower()).ratio()
-                score_ar = SequenceMatcher(None, user_message.lower(), q_ar.lower()).ratio()
-                # Use the higher score
-                score = max(score_en, score_ar)
-                # Return answer in user's language
+                q_en_lower = (q_en or '').lower()
+                q_ar_lower = (q_ar or '').lower()
+                a_en_lower = (a_en or '').lower()
+                
+                # 1) SequenceMatcher on question text
+                seq_en = SequenceMatcher(None, msg_lower, q_en_lower).ratio()
+                seq_ar = SequenceMatcher(None, msg_lower, q_ar_lower).ratio()
+                seq_score = max(seq_en, seq_ar)
+                
+                # 2) Keyword overlap scoring (words in common / total words)
+                q_words = set(re.findall(r'[a-z0-9\u0600-\u06ff]{2,}', q_en_lower + ' ' + q_ar_lower))
+                a_words = set(re.findall(r'[a-z0-9\u0600-\u06ff]{2,}', a_en_lower))
+                all_kb_words = q_words | a_words
+                
+                if msg_words and all_kb_words:
+                    common = msg_words & all_kb_words
+                    keyword_score = len(common) / max(len(msg_words), 1)
+                else:
+                    keyword_score = 0.0
+                
+                # 3) Combine: take the higher of the two approaches
+                final_score = max(seq_score, keyword_score * 0.85)
+                
                 answer = a_ar if user_lang == 'ar' else a_en
-                scored.append((score, q_en, answer))
+                scored.append((final_score, q_en, answer))
             
             scored.sort(reverse=True)
-            # Return top N answers above configurable threshold
             top_contexts = [a for s, q, a in scored[:ai_config.MAX_KNOWLEDGE_CONTEXTS] 
                           if s >= ai_config.SIMILARITY_THRESHOLD]
+            
+            log_debug(f'KB search for "{user_message[:60]}" -> top scores: {[(round(s,3), q[:50]) for s, q, _ in scored[:8]]}')
             return top_contexts
             
         except Exception as e:

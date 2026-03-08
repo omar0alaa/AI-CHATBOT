@@ -27,8 +27,8 @@ class AIConfig:
     KB_INGEST_MAX_TOKENS = int(os.getenv("KB_INGEST_MAX_TOKENS", "8000"))
 
     # === Knowledge Base Settings ===
-    SIMILARITY_THRESHOLD = 0.7          # minimum similarity for knowledge base matches (0.0-1.0)
-    MAX_KNOWLEDGE_CONTEXTS = 3          # maximum number of knowledge base results to use
+    SIMILARITY_THRESHOLD = 0.35          # minimum similarity for knowledge base matches (0.0-1.0)
+    MAX_KNOWLEDGE_CONTEXTS = 5          # maximum number of knowledge base results to use
 
     # === Chat History Settings ===
     MAX_CHAT_EXCHANGES = 5              # number of user-AI exchanges to keep in history

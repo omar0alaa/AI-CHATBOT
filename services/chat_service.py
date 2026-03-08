@@ -267,7 +267,7 @@ class ChatService:
                 all_context.append(f"Previous conversation: {conversation_context}")
             
             context_str = "\n".join([f"- {c}" for c in all_context])
-            prompt = f"{lang_instruction}\n\nAvailable Information:\n{context_str}\n\nUser Question: {user_message}\n\nIMPORTANT: Answer based on the available information above. You can reference previous parts of our conversation if the question relates to something we discussed. Provide detailed and helpful responses."
+            prompt = f"{lang_instruction}\n\nAvailable Information:\n{context_str}\n\nUser Question: {user_message}\n\nIMPORTANT: Answer ONLY based on the Available Information above. Do NOT invent or assume products, services, or details that are not in the Available Information. If the information doesn't fully answer the question, say what you know from the data and suggest the user ask about a specific product or category. Never make up product names, brands, or specifications."
         
         # Build OpenAI-compatible message payload for Groq
         messages = [
