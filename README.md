@@ -116,6 +116,8 @@ Fields:
 - `file` (required): `.pdf` / `.docx` / `.txt`
 - `client_id` (optional): target client table (default `youlearnt`)
 - `replace_existing` (optional): `true|false` (default `false`)
+- `force_replace` (optional): `true|false` (default `false`)
+- `async` (optional): `true|false` (default `false`)
 
 What it does:
 1) Extracts text from file
@@ -133,6 +135,15 @@ curl -X POST "http://127.0.0.1:5000/api/knowledge/import" \
 ```
 
 Response includes counts (`generated_entries`, `inserted_entries`) and a `preview`.
+
+Async mode:
+- Send `async=true` to start import in background and receive `job_id`.
+- Poll `GET /api/knowledge/import/status/<job_id>` for progress (`progress`, `stage`, `message`) until status is `completed` or `failed`.
+
+Safety behavior:
+- If `replace_existing=true` is sent repeatedly for the same client in the same session,
+  clear runs only once to avoid accidental wipes on subsequent imports.
+- Send `force_replace=true` to explicitly clear again.
 
 ## Azure Speech APIs (STT + TTS)
 

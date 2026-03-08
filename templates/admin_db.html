@@ -91,6 +91,9 @@
                             </div>
                             <button id="kb-import-btn" class="btn btn-success btn-sm" type="button">Upload & Auto-Fill</button>
                         </div>
+                        <div class="progress mt-2" style="height: 10px;">
+                            <div id="kb-import-progress" class="progress-bar" role="progressbar" style="width: 0%;" aria-valuemin="0" aria-valuemax="100">0%</div>
+                        </div>
                         <div id="kb-import-status" class="small mt-2 text-muted"></div>
                     </div>
                 </div>
@@ -385,6 +388,7 @@
     document.getElementById('kb-import-btn').addEventListener('click', async function() {
         const fileInput = document.getElementById('kb-import-file');
         const statusNode = document.getElementById('kb-import-status');
+        const progressNode = document.getElementById('kb-import-progress');
         const file = fileInput.files?.[0];
         const clientId = getSelectedClientId();
         const replaceExisting = document.getElementById('replace-existing').checked;
@@ -398,24 +402,63 @@
         formData.append('file', file);
         formData.append('client_id', clientId);
         formData.append('replace_existing', String(replaceExisting));
+        formData.append('async', 'true');
 
-        statusNode.textContent = 'Import in progress... this may take a while for large files.';
+        statusNode.textContent = 'Import started...';
+        progressNode.style.width = '5%';
+        progressNode.textContent = '5%';
         setActionStatus('');
 
-        const res = await fetch('/api/knowledge/import', {
+        const startRes = await fetch('/api/knowledge/import', {
             method: 'POST',
             body: formData
         });
-        const data = await res.json();
+        const startData = await startRes.json();
 
-        if (!res.ok || data.error) {
-            statusNode.textContent = `Import failed: ${data.error || 'Unknown error'}`;
+        if (!startRes.ok || startData.error) {
+            statusNode.textContent = `Import failed: ${startData.error || 'Unknown error'}`;
+            progressNode.style.width = '0%';
+            progressNode.textContent = '0%';
             return;
         }
 
-        statusNode.textContent = `Imported ${data.inserted_entries} entries for '${data.client_id}' from ${data.source_file}.`;
-        await loadClients(clientId);
-        fetchQA();
+        const jobId = startData.job_id;
+
+        async function pollStatus() {
+            const res = await fetch(`/api/knowledge/import/status/${encodeURIComponent(jobId)}`);
+            const data = await res.json();
+            if (!res.ok || data.error) {
+                statusNode.textContent = `Import failed: ${data.error || 'Unknown error'}`;
+                progressNode.style.width = '0%';
+                progressNode.textContent = '0%';
+                return;
+            }
+
+            const p = Number(data.progress || 0);
+            progressNode.style.width = `${p}%`;
+            progressNode.textContent = `${p}%`;
+            statusNode.textContent = `${data.stage || 'running'}: ${data.message || ''}`;
+
+            if (data.status === 'failed') {
+                statusNode.textContent = `Import failed: ${data.error || data.message || 'Unknown error'}`;
+                return;
+            }
+
+            if (data.status === 'completed') {
+                const result = data.result || {};
+                statusNode.textContent = `Imported ${result.inserted_entries || 0} entries (${result.products_detected || 0} products detected) for '${result.client_id || clientId}' from ${result.source_file || file.name}.`;
+                if (replaceExisting) {
+                    document.getElementById('replace-existing').checked = false;
+                }
+                await loadClients(clientId);
+                fetchQA();
+                return;
+            }
+
+            setTimeout(pollStatus, 1200);
+        }
+
+        setTimeout(pollStatus, 800);
     });
 
     loadClients(getClientFromUrl()).then(fetchQA);

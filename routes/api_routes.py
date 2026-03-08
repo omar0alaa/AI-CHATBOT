@@ -28,6 +28,28 @@ def _get_client_id(data=None, form=None, args=None):
         or 'youlearnt'
     )
 
+
+def _get_client_name(data=None, form=None, args=None):
+    data = data or {}
+    form = form or {}
+    args = args or {}
+    value = data.get('client_name') or form.get('client_name') or args.get('client_name')
+    if value and str(value).strip():
+        return str(value).strip()
+    # fallback to client_id when no explicit display name is provided
+    return _get_client_id(data=data, form=form, args=args)
+
+
+def _get_custom_persona(data=None, form=None, args=None):
+    data = data or {}
+    form = form or {}
+    args = args or {}
+    value = data.get('custom_persona') or form.get('custom_persona') or args.get('custom_persona')
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text if text else None
+
 @api_bp.route('/chat', methods=['POST'])
 def chat():
     # Main chat endpoint - processes user messages and returns AI responses
@@ -37,6 +59,8 @@ def chat():
         user_message = data.get('message', '')
         ui_lang = data.get('lang')
         client_id = _get_client_id(data=data)
+        client_name = _get_client_name(data=data)
+        custom_persona = _get_custom_persona(data=data)
         
         if not user_message:
             return jsonify({'error': 'No message provided'}), 400
@@ -49,7 +73,7 @@ def chat():
         
         # Process message using chat service
         processed_answer, updated_history = chat_service.process_message(
-            user_message, ui_lang, chat_history, client_id
+            user_message, ui_lang, chat_history, client_id, client_name, custom_persona
         )
         
         # Update session
@@ -88,6 +112,8 @@ def voice_chat():
         ui_lang = request.form.get('lang') or request.args.get('lang') or 'en'
         summarize = _to_bool(request.form.get('summarize', request.args.get('summarize')), default=False)
         client_id = _get_client_id(form=request.form, args=request.args)
+        client_name = _get_client_name(form=request.form, args=request.args)
+        custom_persona = _get_custom_persona(form=request.form, args=request.args)
 
         # STT
         transcript = speech_service.speech_to_text(
@@ -105,7 +131,7 @@ def voice_chat():
         history_map = session['chat_history_by_client']
         chat_history = history_map.get(client_id, [])
 
-        reply_text, updated_history = chat_service.process_message(transcript, ui_lang, chat_history, client_id)
+        reply_text, updated_history = chat_service.process_message(transcript, ui_lang, chat_history, client_id, client_name, custom_persona)
         history_map[client_id] = updated_history
         session['chat_history_by_client'] = history_map
 
@@ -302,22 +328,73 @@ def knowledge_import_from_file():
             return jsonify({'error': 'Uploaded file is empty'}), 400
 
         client_id = _get_client_id(form=request.form, args=request.args)
-        replace_existing = _to_bool(
+        async_mode = _to_bool(request.form.get('async', request.args.get('async')), default=False)
+        replace_existing_requested = _to_bool(
             request.form.get('replace_existing', request.args.get('replace_existing')),
             default=False,
         )
+        force_replace = _to_bool(
+            request.form.get('force_replace', request.args.get('force_replace')),
+            default=False,
+        )
+
+        # Safety guard: avoid accidental repeated wipes across consecutive runs.
+        # If replace is requested multiple times in the same session for same client,
+        # only first run clears unless force_replace=true is explicitly sent.
+        replaced_clients = set(session.get('kb_replaced_clients', []))
+        replace_existing_effective = replace_existing_requested
+        if replace_existing_requested and not force_replace and client_id in replaced_clients:
+            replace_existing_effective = False
+
+        if async_mode:
+            job_id = kb_ingestion_service.start_ingestion_job(
+                file_name=file_name,
+                file_bytes=file_bytes,
+                client_id=client_id,
+                replace_existing=replace_existing_effective,
+            )
+            if replace_existing_effective:
+                replaced_clients.add(client_id)
+                session['kb_replaced_clients'] = list(replaced_clients)
+            return jsonify({
+                'success': True,
+                'async': True,
+                'job_id': job_id,
+                'client_id': client_id,
+                'replace_requested': replace_existing_requested,
+                'replace_applied': replace_existing_effective,
+                'force_replace': force_replace,
+            }), 202
 
         result = kb_ingestion_service.ingest_file_to_kb(
             file_name=file_name,
             file_bytes=file_bytes,
             client_id=client_id,
-            replace_existing=replace_existing,
+            replace_existing=replace_existing_effective,
         )
+        if replace_existing_effective:
+            replaced_clients.add(client_id)
+            session['kb_replaced_clients'] = list(replaced_clients)
+
+        result['replace_requested'] = replace_existing_requested
+        result['replace_applied'] = replace_existing_effective
+        result['force_replace'] = force_replace
         return jsonify({'success': True, **result})
 
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
     except RuntimeError as e:
         return jsonify({'error': str(e)}), 502
+    except Exception as e:
+        return jsonify({'error': f'Internal server error: {str(e)}'}), 500
+
+
+@api_bp.route('/knowledge/import/status/<job_id>', methods=['GET'])
+def knowledge_import_status(job_id):
+    try:
+        job = kb_ingestion_service.get_job_status(job_id)
+        if not job:
+            return jsonify({'error': 'Job not found'}), 404
+        return jsonify(job)
     except Exception as e:
         return jsonify({'error': f'Internal server error: {str(e)}'}), 500

@@ -18,7 +18,7 @@ class ChatService:
         self.model_name = ai_config.GROQ_MODEL
         self.api_key = ai_config.GROQ_API_KEY
     
-    def process_message(self, user_message, ui_lang, chat_history, client_id='youlearnt'):
+    def process_message(self, user_message, ui_lang, chat_history, client_id='youlearnt', client_name=None, custom_persona=None):
         #Process a user message and return AI response
         log_info("========== NEW CHAT REQUEST ==========")
         log_debug(f"Received message: {user_message}")
@@ -28,25 +28,27 @@ class ChatService:
         user_lang = self._detect_language(user_message, ui_lang)
         log_debug(f"Final language: {user_lang}")
         
+        client_name = (client_name or client_id or 'our service').strip()
+
         # Check for inappropriate content first
         if contains_inappropriate_content(user_message, user_lang):
             log_warning(f"Inappropriate content detected, blocking request")
             inappropriate_response = get_inappropriate_response(user_lang)
             
             # Update chat history with user message and inappropriate response
-            updated_history = self._update_chat_history(chat_history, user_message, user_lang)
+            updated_history = self._update_chat_history(chat_history, user_message, user_lang, client_name, custom_persona)
             final_history = self._finalize_chat_history(updated_history, inappropriate_response)
             
             return inappropriate_response, final_history
         
         # Update chat history with system prompt
-        updated_history = self._update_chat_history(chat_history, user_message, user_lang)
+        updated_history = self._update_chat_history(chat_history, user_message, user_lang, client_name, custom_persona)
         
         # Get knowledge base context
         contexts = self._get_knowledge_context(user_message, user_lang, client_id)
         
         # Generate AI response
-        answer = self._generate_ai_response(user_message, user_lang, contexts, updated_history)
+        answer = self._generate_ai_response(user_message, user_lang, contexts, updated_history, client_name, custom_persona)
         
         # Post-process the response
         processed_answer = self._post_process_response(answer, user_message, user_lang)
@@ -110,9 +112,9 @@ class ChatService:
                 log_error(f"Language detection failed: {e}")
                 return ai_config.DEFAULT_LANGUAGE
     
-    def _update_chat_history(self, chat_history, user_message, user_lang):
+    def _update_chat_history(self, chat_history, user_message, user_lang, client_name='our service', custom_persona=None):
         #Update chat history with system prompt and user message
-        lang_instruction = get_persona_prompt(user_lang)
+        lang_instruction = get_persona_prompt(user_lang, client_name, custom_persona)
         
         # Remove old system prompts and add new one
         history = [msg for msg in chat_history if msg['role'] != 'system']
@@ -211,13 +213,13 @@ class ChatService:
         
         return has_keywords and is_reasonable_length
     
-    def _generate_ai_response(self, user_message, user_lang, contexts, chat_history):
+    def _generate_ai_response(self, user_message, user_lang, contexts, chat_history, client_name='our service', custom_persona=None):
         #Generate AI response using Groq
         log_debug(f"Groq URL: {self.api_url}")
         log_debug(f"Model: {self.model_name}")
         
         fallback_message = get_fallback_message(user_lang)
-        lang_instruction = get_persona_prompt(user_lang)
+        lang_instruction = get_persona_prompt(user_lang, client_name, custom_persona)
         
         # Check if it's a simple greeting
         greetings = ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening', 'مرحبا', 'أهلا', 'السلام عليكم', 'صباح الخير', 'هلا','مساء الخير']
@@ -238,7 +240,7 @@ class ChatService:
         if not contexts:
             if is_greeting or is_help_request:
                 log_debug("Processing greeting/help request with fallback prompt")
-                prompt = get_persona_fallback_prompt(user_lang, user_message)
+                prompt = get_persona_fallback_prompt(user_lang, user_message, client_name, custom_persona)
             elif conversation_context and self._is_follow_up_question(user_message, user_lang):
                 log_debug("Processing follow-up question about previous conversation")
                 # Allow follow-up questions about previous responses
