@@ -119,12 +119,10 @@ class KBIngestionService:
 
         _progress(72, 'product_enrichment', 'Running full-document product extraction')
         all_products.extend(self._extract_products_from_full_text(text))
-        all_products.extend(self._extract_products_heuristic(text))
 
         product_rows = self._normalize_products(all_products)
-        product_entries = self._product_rows_to_entries(product_rows)
-        all_entries.extend(product_entries)
-        all_entries.extend(self._category_rows_to_entries(product_rows))
+        catalog_entries = self._build_catalog_entries(product_rows)
+        all_entries.extend(catalog_entries)
 
         _progress(82, 'normalizing', 'Normalizing and de-duplicating entries')
         normalized = self._normalize_and_dedupe(all_entries)
@@ -195,41 +193,42 @@ class KBIngestionService:
 
     def _generate_entries_from_chunk(self, chunk_text, chunk_index=1, total_chunks=1):
         prompt = (
-            'You are building a bilingual product knowledge base from a commercial catalog.\n'
-            'The document contains many SKUs with names, categories, specs, features, '
-            'certifications, packaging info, and general notes.\n\n'
-            'Your task: extract atomic, practical Q&A pairs ONLY from the content provided in this chunk.\n'
-            'Focus on:\n'
-            '- Product identity (what is SKU X, what category it belongs to)\n'
-            '- Product specs (capacity, ports, power, resolution, battery, OS, etc.)\n'
-            '- Product features/benefits (wireless CarPlay, ENC, night vision, 4G, Wi-Fi 6, etc.)\n'
-            '- Category questions (which dashcams / power banks / car chargers are available)\n'
-            '- General catalog questions (what categories exist, what certifications are used)\n\n'
-            'Return JSON ONLY (no markdown), as an array of objects with keys exactly:\n'
+            'You are building a bilingual (English + Arabic) knowledge base from a document.\n\n'
+            'TASK: For EVERY distinct item, product, service, course, property, or offering mentioned '
+            'in this chunk, generate DETAILED Q&A pairs that capture the real information from the text.\n\n'
+            'For each item you find, create these Q&A entries (skip any that lack info in the text):\n'
+            '1) IDENTITY: "What is [item name / code]?" -> Answer with: full name, type/category, '
+            'and a one-sentence description.\n'
+            '2) SPECS/DETAILS: "What are the specifications/details of [item]?" -> Answer listing ALL '
+            'concrete details found in the text: technical specs, dimensions, features, location, duration, '
+            'requirements, included items, etc.\n'
+            '3) KEY FEATURES/HIGHLIGHTS: "What are the key features/highlights of [item]?" -> Answer listing '
+            'the standout selling points, benefits, or unique characteristics.\n\n'
+            'Also create general entries when applicable:\n'
+            '- "What [category] options are available?" (group similar items)\n'
+            '- "What is the difference between [A] and [B]?" (only when details differ clearly in the text)\n\n'
+            'Return JSON ONLY (no markdown fences), as an array of objects with keys exactly:\n'
             'question_EN, question_AR, answer_EN, answer_AR\n\n'
-            'Rules:\n'
-            '1) Keep each answer concise but complete and self-contained (no reference to "this chunk").\n'
-            '2) Do NOT invent facts or SKUs not in the text.\n'
-            '3) If the content does not clearly support a full Q&A, skip it.\n'
-            '4) Avoid duplicates and near-duplicates.\n'
-            '5) Prefer high-value product, category, and catalog information.\n'
-            '6) When you see a clear product/SKU row (like "PP-XXXX"), create at least one Q&A that lists '
-            'its main specifications and another that lists its key features, if available.\n'
-            '7) When answering, repeat the SKU and product name in the answer whenever available.\n'
-            '8) If a field like price or warranty is NOT present, do not mention it.\n\n'
+            'STRICT RULES:\n'
+            '- Include ALL numbers, specs, measurements, and units exactly as written in the text\n'
+            '- Repeat the item name/code in every answer\n'
+            '- Do NOT invent details or information not present in the text\n'
+            '- Do NOT write vague answers like "available in catalog" or "ask for details" or "please inquire"\n'
+            '- Every answer MUST contain real, concrete information extracted from the text\n'
+            '- If an item only has a name and zero details in the text, SKIP it entirely (do not create a Q&A)\n'
+            '- If a field like price or dates is NOT in the text, do not mention it\n\n'
             f'Chunk {chunk_index}/{total_chunks}:\n{chunk_text}'
         )
 
         payload = {
             'model': self.model_name,
             'messages': [
-                {'role': 'system', 'content': 'You output strict JSON only.'},
+                {'role': 'system', 'content': 'You are a knowledge base builder. You output strict JSON arrays only. Every answer must contain real details and specifications from the provided text. Never output placeholder or generic answers.'},
                 {'role': 'user', 'content': prompt},
             ],
-            # Higher token budget than chat path for ingestion tasks
-            'max_tokens': int(getattr(ai_config, 'KB_INGEST_MAX_TOKENS', 3500)),
-            'temperature': 0.2,
-            'top_p': 0.95,
+            'max_tokens': int(getattr(ai_config, 'KB_INGEST_MAX_TOKENS', 6000)),
+            'temperature': 0.15,
+            'top_p': 0.9,
             'stream': False,
         }
 
@@ -240,22 +239,21 @@ class KBIngestionService:
 
     def _extract_products_from_chunk(self, chunk_text, chunk_index=1, total_chunks=1):
         prompt = (
-            'Extract products from the following catalog content.\n'
-            'Each product usually has an SKU, name, specs and features.\n'
+            'Extract all distinct items (products, services, courses, properties, or offerings) '
+            'from the following content.\n'
             'Return JSON ONLY as an array of objects with keys exactly:\n'
             'name_EN, name_AR, details_EN, details_AR\n\n'
             'Guidelines:\n'
-            '1) Include only products explicitly mentioned in this chunk.\n'
+            '1) Include only items explicitly mentioned in this chunk.\n'
             '2) In details_EN, write 2-4 sentences summarizing:\n'
-            '   - SKU and product name\n'
-            '   - Product type/category (for example: power bank, car charger, dashcam)\n'
-            '   - Key technical specs (capacity in mAh, power in W, ports, protocols, resolution, battery life)\n'
-            '   - 2-3 main features (for example: wireless charging, 4G, Wi-Fi 6, ENC, night vision)\n'
-            '3) Use numbers and units exactly as in the text (mAh, W, V, A, mm, ml, etc.).\n'
-            '4) If the SKU or exact English name is visible, include it in name_EN.\n'
+            '   - Full name, code/SKU if available\n'
+            '   - Type or category\n'
+            '   - Key details: specs, features, location, duration, area, capacity, or any concrete attributes\n'
+            '3) Use numbers and units exactly as in the text.\n'
+            '4) If a code/SKU or exact English name is visible, include it in name_EN.\n'
             '5) If Arabic is not present in the text, translate the English name and details to Arabic.\n'
-            '6) Do not invent specs or categories; only use information in the text.\n'
-            '7) If no products/services exist in this chunk, return [].\n\n'
+            '6) Do not invent details; only use information in the text.\n'
+            '7) If no items exist in this chunk, return [].\n\n'
             f'Chunk {chunk_index}/{total_chunks}:\n{chunk_text}'
         )
 
@@ -280,15 +278,16 @@ class KBIngestionService:
         # Additional pass to improve product recall across the full document
         sample = text[:45000]
         prompt = (
-            'From the following document, extract a comprehensive list of products mentioned in the full catalog document.\n'
+            'From the following document, extract a comprehensive list of all distinct items '
+            '(products, services, courses, properties, or offerings).\n'
             'Return JSON ONLY as an array of objects with keys exactly:\n'
             'name_EN, name_AR, details_EN, details_AR\n\n'
             'Rules:\n'
-            '1) Capture every distinct product line or SKU that appears.\n'
-            '2) Deduplicate obvious duplicates by SKU/name, keeping the most complete details.\n'
-            '3) In details_EN, summarize category + key specs + standout features.\n'
+            '1) Capture every distinct item, product line, SKU, service, or offering that appears.\n'
+            '2) Deduplicate obvious duplicates by name/code, keeping the most complete details.\n'
+            '3) In details_EN, summarize category + key details + standout features or highlights.\n'
             '4) Do not invent missing values; keep unknown Arabic fields empty.\n'
-            '5) If no products exist, return [].\n\n'
+            '5) If no items exist, return [].\n\n'
             f'{sample}'
         )
 
@@ -306,28 +305,6 @@ class KBIngestionService:
 
         content = self._call_llm(payload)
         return self._parse_products_json(content)
-
-    def _extract_products_heuristic(self, text):
-        # Heuristic fallback for bullet/numbered product lists in catalogs
-        lines = [line.strip() for line in text.splitlines() if line.strip()]
-        candidates = []
-        for line in lines:
-            clean = re.sub(r'^[\-\*•\d\)\.(\s]+', '', line).strip()
-            if len(clean) < 3 or len(clean) > 140:
-                continue
-            if not re.search(r'[A-Za-z\u0600-\u06FF]', clean):
-                continue
-            if re.search(r'\b(page|copyright|www\.|http)\b', clean.lower()):
-                continue
-            # Keep likely item-style lines
-            if re.match(r'^[A-Za-z\u0600-\u06FF][^:]{2,120}$', clean):
-                if re.search(r'[\u0600-\u06FF]', clean):
-                    candidates.append({'name_EN': '', 'name_AR': clean, 'details_EN': '', 'details_AR': ''})
-                else:
-                    candidates.append({'name_EN': clean, 'name_AR': '', 'details_EN': '', 'details_AR': ''})
-            if len(candidates) >= 400:
-                break
-        return candidates
 
     def _call_llm(self, payload):
         if not self.api_key:
@@ -506,78 +483,82 @@ class KBIngestionService:
             })
         return out
 
-    def _product_rows_to_entries(self, products):
+    def _build_catalog_entries(self, products):
+        """Build master item list and AI-detected per-category summary entries.
+        Individual product/item Q&A comes from _generate_entries_from_chunk, NOT here."""
         if not products:
             return []
 
-        # Cap to avoid runaway KB growth for very large catalogs in one run
-        products = products[:300]
+        products = products[:500]
+        entries = []
 
+        # --- Master item list ---
         en_names = [p['name_EN'] for p in products if p.get('name_EN')]
         ar_names = [p['name_AR'] for p in products if p.get('name_AR')]
 
-        entries = [
-            {
-                'question_EN': 'What products or services do you offer?',
-                'question_AR': 'ما هي المنتجات أو الخدمات التي تقدمونها؟',
-                'answer_EN': '\n'.join([f'- {n}' for n in en_names]) if en_names else 'Please ask for the available products.',
-                'answer_AR': '\n'.join([f'- {n}' for n in ar_names]) if ar_names else 'يرجى السؤال عن المنتجات المتاحة.',
-            }
-        ]
-
-        for product in products:
-            name_en = product.get('name_EN') or product.get('name_AR') or 'this product'
-            name_ar = product.get('name_AR') or product.get('name_EN') or 'هذا المنتج'
-            details_en = (product.get('details_EN') or '').strip()
-            details_ar = (product.get('details_AR') or '').strip()
-
-            if not details_en:
-                details_en = (
-                    f'{name_en} is one of the products listed in the catalog. '
-                    f'Please ask for specifications or features to get more details.'
-                )
-            if not details_ar:
-                details_ar = (
-                    f'{name_ar} هو أحد المنتجات المذكورة في الكتالوج. '
-                    f'يمكنك طلب المواصفات أو المميزات للحصول على تفاصيل أكثر.'
-                )
-
+        if en_names:
             entries.append({
-                'question_EN': f'Tell me about {name_en}.',
-                'question_AR': f'أعطني تفاصيل عن {name_ar}.',
-                'answer_EN': details_en,
-                'answer_AR': details_ar,
+                'question_EN': 'What do you offer?',
+                'question_AR': 'ماذا تقدمون؟',
+                'answer_EN': 'We offer the following:\n' + '\n'.join(f'- {n}' for n in en_names),
+                'answer_AR': 'نقدم ما يلي:\n' + '\n'.join(f'- {n}' for n in (ar_names or en_names)),
             })
+
+        # --- Ask the LLM to categorize the products dynamically ---
+        if len(products) >= 3:
+            cat_entries = self._ai_categorize_products(products)
+            entries.extend(cat_entries)
 
         return entries
 
-    def _category_rows_to_entries(self, products):
-        if not products:
+    def _ai_categorize_products(self, products):
+        """Use the LLM to group products into categories and generate per-category Q&A."""
+        product_lines = []
+        for p in products[:300]:
+            name = p.get('name_EN') or p.get('name_AR') or ''
+            details = (p.get('details_EN') or '')[:120]
+            product_lines.append(f'{name} | {details}' if details else name)
+
+        product_list_text = '\n'.join(product_lines)
+
+        prompt = (
+            'Given the following list of items from a catalog, group them into logical categories.\n'
+            'Then for EACH category that has 2 or more items, create a Q&A entry.\n\n'
+            'Return JSON ONLY (no markdown) as an array of objects with keys exactly:\n'
+            'question_EN, question_AR, answer_EN, answer_AR\n\n'
+            'For each category:\n'
+            '- question_EN: "What [category] options/items do you have?" (use natural phrasing)\n'
+            '- question_AR: Arabic translation of the question\n'
+            '- answer_EN: "We offer the following [category]:" followed by a bullet list of item names\n'
+            '- answer_AR: Arabic translation of the answer with the same item names\n\n'
+            'Rules:\n'
+            '- Detect categories from the actual content (electronics, real estate, courses, food, etc.)\n'
+            '- Do NOT hardcode categories; derive them from the items\n'
+            '- Keep category names short and natural\n'
+            '- If all items belong to one category, create just one entry\n'
+            '- Skip items that do not clearly fit any category\n'
+            '- Maximum 15 categories\n\n'
+            f'Items:\n{product_list_text}'
+        )
+
+        payload = {
+            'model': self.model_name,
+            'messages': [
+                {'role': 'system', 'content': 'You output strict JSON arrays only.'},
+                {'role': 'user', 'content': prompt},
+            ],
+            'max_tokens': min(3000, int(getattr(ai_config, 'KB_INGEST_MAX_TOKENS', 6000))),
+            'temperature': 0.15,
+            'top_p': 0.9,
+            'stream': False,
+        }
+
+        try:
+            content = self._call_llm(payload)
+            return self._parse_entries_json(content)
+        except Exception as e:
+            log_error(f'AI categorization failed: {e}')
             return []
-
-        categories = set()
-        for product in products:
-            details = (product.get('details_EN') or '').strip()
-            if not details:
-                continue
-
-            # Try common patterns like "Category: Cameras" or "category - Networking".
-            match = re.search(r'\bcategory\s*[:\-]\s*([^\n\.;]{2,80})', details, re.IGNORECASE)
-            if match:
-                categories.add(match.group(1).strip())
-
-        if not categories:
-            return []
-
-        ordered_categories = sorted(categories)
-        return [
-            {
-                'question_EN': 'What product categories do you provide?',
-                'question_AR': 'ما هي فئات المنتجات التي توفرونها؟',
-                'answer_EN': '\n'.join([f'- {c}' for c in ordered_categories]),
-                'answer_AR': 'تتوفر فئات متعددة من المنتجات. يمكنني تزويدك بالتفاصيل حسب الفئة المطلوبة.',
-            }
-        ]
 
 
 kb_ingestion_service = KBIngestionService()

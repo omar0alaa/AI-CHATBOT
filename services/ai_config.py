@@ -24,7 +24,7 @@ class AIConfig:
 
     # === Request Timeouts ===
     GROQ_REQUEST_TIMEOUT = int(os.getenv("GROQ_REQUEST_TIMEOUT", "120"))
-    KB_INGEST_MAX_TOKENS = int(os.getenv("KB_INGEST_MAX_TOKENS", "3500"))
+    KB_INGEST_MAX_TOKENS = int(os.getenv("KB_INGEST_MAX_TOKENS", "6000"))
 
     # === Knowledge Base Settings ===
     SIMILARITY_THRESHOLD = 0.7          # minimum similarity for knowledge base matches (0.0-1.0)
