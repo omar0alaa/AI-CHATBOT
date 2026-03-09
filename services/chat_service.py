@@ -39,13 +39,13 @@ class ChatService:
             updated_history = self._update_chat_history(chat_history, user_message, user_lang, client_name, custom_persona)
             final_history = self._finalize_chat_history(updated_history, inappropriate_response)
             
-            return inappropriate_response, final_history
+            return inappropriate_response, final_history, {}
         
         # Update chat history with system prompt
         updated_history = self._update_chat_history(chat_history, user_message, user_lang, client_name, custom_persona)
         
         # Get knowledge base context
-        contexts = self._get_knowledge_context(user_message, user_lang, client_id)
+        contexts, media_items = self._get_knowledge_context(user_message, user_lang, client_id)
         
         # Generate AI response
         answer = self._generate_ai_response(user_message, user_lang, contexts, updated_history, client_name, custom_persona)
@@ -59,8 +59,16 @@ class ChatService:
         # Save debug information
         self._save_debug_info(final_history, user_message, answer, processed_answer)
         
-        log_debug(f"Final answer: {len(processed_answer)} characters")
-        return processed_answer, final_history
+        # Collect unique media URLs from matching KB entries
+        media = {}
+        for m in media_items:
+            if m.get('image_url') and 'image_url' not in media:
+                media['image_url'] = m['image_url']
+            if m.get('video_url') and 'video_url' not in media:
+                media['video_url'] = m['video_url']
+        
+        log_debug(f"Final answer: {len(processed_answer)} characters, media: {bool(media)}")
+        return processed_answer, final_history, media
 
     def summarize_message(self, text, ui_lang=None):
         #Generate a concise summary for provided text
@@ -126,17 +134,19 @@ class ChatService:
     def _get_knowledge_context(self, user_message, user_lang, client_id='youlearnt'):
         #Retrieve relevant context from knowledge base
         try:
-            contexts = get_answer_from_db(user_message, user_lang, client_id)
-            log_debug(f"Found {len(contexts)} contexts from database")
+            results = get_answer_from_db(user_message, user_lang, client_id)
+            contexts = [r['answer'] for r in results]
+            media_items = [r['media'] for r in results if r.get('media')]
+            log_debug(f"Found {len(contexts)} contexts from database ({len(media_items)} with media)")
             if contexts:
                 for i, ctx in enumerate(contexts):
                     log_debug(f"Context {i+1}: {ctx[:100]}...")
             else:
                 log_debug(f"No relevant contexts found for message: {user_message}")
-            return contexts
+            return contexts, media_items
         except Exception as e:
             log_error(f"Database query failed: {e}")
-            return []
+            return [], []
     
     def _get_conversation_context(self, chat_history):
         #Extract relevant conversation context from chat history

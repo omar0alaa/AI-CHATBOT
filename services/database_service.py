@@ -23,6 +23,8 @@ def init_db():
             question_AR TEXT NOT NULL,
             answer_EN TEXT NOT NULL,
             answer_AR TEXT NOT NULL,
+            image_url TEXT,
+            video_url TEXT,
             created_date TEXT DEFAULT CURRENT_TIMESTAMP
         )''')
         # Preferred per-client table for default client
@@ -32,6 +34,8 @@ def init_db():
             question_AR TEXT NOT NULL,
             answer_EN TEXT NOT NULL,
             answer_AR TEXT NOT NULL,
+            image_url TEXT,
+            video_url TEXT,
             created_date TEXT DEFAULT CURRENT_TIMESTAMP
         )''')
         conn.commit()
@@ -55,6 +59,10 @@ class DatabaseService:
         columns = {row[1] for row in c.fetchall()}
         if 'created_date' not in columns:
             c.execute(f'ALTER TABLE {table} ADD COLUMN created_date TEXT')
+        if 'image_url' not in columns:
+            c.execute(f'ALTER TABLE {table} ADD COLUMN image_url TEXT')
+        if 'video_url' not in columns:
+            c.execute(f'ALTER TABLE {table} ADD COLUMN video_url TEXT')
         conn.commit()
 
     def _normalize_client_id(self, client_id):
@@ -83,6 +91,8 @@ class DatabaseService:
                 question_AR TEXT NOT NULL,
                 answer_EN TEXT NOT NULL,
                 answer_AR TEXT NOT NULL,
+                image_url TEXT,
+                video_url TEXT,
                 created_date TEXT DEFAULT CURRENT_TIMESTAMP
             )''')
             self._ensure_table_schema(conn, table)
@@ -123,7 +133,7 @@ class DatabaseService:
             table = self.ensure_client_table(client_id)
             conn = sqlite3.connect(self.db_path)
             c = conn.cursor()
-            c.execute(f'SELECT question_EN, question_AR, answer_EN, answer_AR FROM {table}')
+            c.execute(f'SELECT question_EN, question_AR, answer_EN, answer_AR, image_url, video_url FROM {table}')
             rows = c.fetchall()
             conn.close()
             
@@ -131,7 +141,7 @@ class DatabaseService:
             msg_words = set(re.findall(r'[a-z0-9\u0600-\u06ff]{2,}', msg_lower))
             
             scored = []
-            for q_en, q_ar, a_en, a_ar in rows:
+            for q_en, q_ar, a_en, a_ar, img_url, vid_url in rows:
                 q_en_lower = (q_en or '').lower()
                 q_ar_lower = (q_ar or '').lower()
                 a_en_lower = (a_en or '').lower()
@@ -174,14 +184,21 @@ class DatabaseService:
                 final_score = max(seq_score, keyword_score * 0.85, substring_score * 0.8)
                 
                 answer = a_ar if user_lang == 'ar' else a_en
-                scored.append((final_score, q_en, answer))
+                media = {}
+                if img_url:
+                    media['image_url'] = img_url
+                if vid_url:
+                    media['video_url'] = vid_url
+                scored.append((final_score, q_en, answer, media))
             
             scored.sort(reverse=True)
-            top_contexts = [a for s, q, a in scored[:ai_config.MAX_KNOWLEDGE_CONTEXTS] 
-                          if s >= ai_config.SIMILARITY_THRESHOLD]
+            results = []
+            for s, q, a, media in scored[:ai_config.MAX_KNOWLEDGE_CONTEXTS]:
+                if s >= ai_config.SIMILARITY_THRESHOLD:
+                    results.append({'answer': a, 'media': media})
             
-            log_debug(f'KB search for "{user_message[:60]}" -> top scores: {[(round(s,3), q[:50]) for s, q, _ in scored[:8]]}')
-            return top_contexts
+            log_debug(f'KB search for "{user_message[:60]}" -> top scores: {[(round(s,3), q[:50]) for s, q, _, _ in scored[:8]]}')
+            return results
             
         except Exception as e:
             log_error(f"Database query failed: {e}")
@@ -193,22 +210,22 @@ class DatabaseService:
             table = self.ensure_client_table(client_id)
             conn = sqlite3.connect(self.db_path)
             c = conn.cursor()
-            c.execute(f'SELECT ID, question_EN, question_AR, answer_EN, answer_AR, created_date FROM {table} ORDER BY ID ASC')
-            rows = [dict(ID=row[0], question_EN=row[1], question_AR=row[2], answer_EN=row[3], answer_AR=row[4], created_date=row[5]) for row in c.fetchall()]
+            c.execute(f'SELECT ID, question_EN, question_AR, answer_EN, answer_AR, image_url, video_url, created_date FROM {table} ORDER BY ID ASC')
+            rows = [dict(ID=row[0], question_EN=row[1], question_AR=row[2], answer_EN=row[3], answer_AR=row[4], image_url=row[5], video_url=row[6], created_date=row[7]) for row in c.fetchall()]
             conn.close()
             return rows
         except Exception as e:
             log_error(f"Failed to get all entries: {e}")
             return []
     
-    def add_entry(self, question_en, question_ar, answer_en, answer_ar, client_id=DEFAULT_CLIENT_ID):
+    def add_entry(self, question_en, question_ar, answer_en, answer_ar, client_id=DEFAULT_CLIENT_ID, image_url=None, video_url=None):
         #Add new knowledge bank entry
         try:
             table = self.ensure_client_table(client_id)
             conn = sqlite3.connect(self.db_path)
             c = conn.cursor()
-            c.execute(f'INSERT INTO {table} (question_EN, question_AR, answer_EN, answer_AR) VALUES (?, ?, ?, ?)', 
-                      (question_en, question_ar, answer_en, answer_ar))
+            c.execute(f'INSERT INTO {table} (question_EN, question_AR, answer_EN, answer_AR, image_url, video_url) VALUES (?, ?, ?, ?, ?, ?)', 
+                      (question_en, question_ar, answer_en, answer_ar, image_url, video_url))
             conn.commit()
             conn.close()
             log_info(f"Added new entry to {table}: {question_en[:50]}...")
@@ -217,14 +234,14 @@ class DatabaseService:
             log_error(f"Failed to add entry: {e}")
             return False
     
-    def update_entry(self, qa_id, question_en, question_ar, answer_en, answer_ar, client_id=DEFAULT_CLIENT_ID):
+    def update_entry(self, qa_id, question_en, question_ar, answer_en, answer_ar, client_id=DEFAULT_CLIENT_ID, image_url=None, video_url=None):
         #Update existing knowledge bank entry
         try:
             table = self.ensure_client_table(client_id)
             conn = sqlite3.connect(self.db_path)
             c = conn.cursor()
-            c.execute(f'UPDATE {table} SET question_EN = ?, question_AR = ?, answer_EN = ?, answer_AR = ? WHERE ID = ?', 
-                      (question_en, question_ar, answer_en, answer_ar, qa_id))
+            c.execute(f'UPDATE {table} SET question_EN = ?, question_AR = ?, answer_EN = ?, answer_AR = ?, image_url = ?, video_url = ? WHERE ID = ?', 
+                      (question_en, question_ar, answer_en, answer_ar, image_url, video_url, qa_id))
             conn.commit()
             conn.close()
             log_info(f"Updated entry ID {qa_id}: {question_en[:50]}...")
@@ -264,7 +281,7 @@ class DatabaseService:
             return False
 
     def add_entries_bulk(self, entries, client_id=DEFAULT_CLIENT_ID):
-        #Bulk insert entries [{question_EN, question_AR, answer_EN, answer_AR}, ...]
+        #Bulk insert entries [{question_EN, question_AR, answer_EN, answer_AR, image_url, video_url}, ...]
         if not entries:
             return 0
         try:
@@ -272,13 +289,15 @@ class DatabaseService:
             conn = sqlite3.connect(self.db_path)
             c = conn.cursor()
             c.executemany(
-                f'INSERT INTO {table} (question_EN, question_AR, answer_EN, answer_AR) VALUES (?, ?, ?, ?)',
+                f'INSERT INTO {table} (question_EN, question_AR, answer_EN, answer_AR, image_url, video_url) VALUES (?, ?, ?, ?, ?, ?)',
                 [
                     (
                         (entry.get('question_EN') or '').strip(),
                         (entry.get('question_AR') or '').strip(),
                         (entry.get('answer_EN') or '').strip(),
                         (entry.get('answer_AR') or '').strip(),
+                        (entry.get('image_url') or '').strip() or None,
+                        (entry.get('video_url') or '').strip() or None,
                     )
                     for entry in entries
                 ]

@@ -1,6 +1,6 @@
 import time
 from pathlib import Path
-from flask import Flask
+from flask import Flask, send_from_directory, abort
 from flask_cors import CORS
 import os
 from dotenv import load_dotenv
@@ -42,6 +42,17 @@ init_db()
 app.register_blueprint(main_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(api_bp)
+
+# Serve uploaded KB media files
+UPLOADS_DIR = Path(__file__).resolve().parent / 'uploads' / 'kb'
+
+@app.route('/uploads/kb/<path:filepath>')
+def serve_kb_upload(filepath):
+    full_path = (UPLOADS_DIR / filepath).resolve()
+    # Prevent path traversal
+    if not str(full_path).startswith(str(UPLOADS_DIR.resolve())):
+        abort(403)
+    return send_from_directory(str(UPLOADS_DIR), filepath)
 
 if __name__ == '__main__':
     host = os.getenv('FLASK_HOST', '0.0.0.0')

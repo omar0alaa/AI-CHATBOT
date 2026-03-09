@@ -1,5 +1,8 @@
 # API routes - Chat functionality and AI interactions
 import io
+import os
+import re
+from pathlib import Path
 from flask import Blueprint, request, jsonify, session, send_file
 from services.chat_service import chat_service
 from services.speech_service import speech_service
@@ -72,7 +75,7 @@ def chat():
         chat_history = history_map.get(client_id, [])
         
         # Process message using chat service
-        processed_answer, updated_history = chat_service.process_message(
+        processed_answer, updated_history, media = chat_service.process_message(
             user_message, ui_lang, chat_history, client_id, client_name, custom_persona
         )
         
@@ -80,8 +83,11 @@ def chat():
         history_map[client_id] = updated_history
         session['chat_history_by_client'] = history_map
         
-        # Return response
-        return jsonify({'message': str(processed_answer), 'client_id': client_id})
+        # Return response with media if available
+        response = {'message': str(processed_answer), 'client_id': client_id}
+        if media:
+            response['media'] = media
+        return jsonify(response)
         
     except Exception as e:
         return jsonify({'error': f'Internal server error: {str(e)}'}), 500
@@ -131,7 +137,7 @@ def voice_chat():
         history_map = session['chat_history_by_client']
         chat_history = history_map.get(client_id, [])
 
-        reply_text, updated_history = chat_service.process_message(transcript, ui_lang, chat_history, client_id, client_name, custom_persona)
+        reply_text, updated_history, media = chat_service.process_message(transcript, ui_lang, chat_history, client_id, client_name, custom_persona)
         history_map[client_id] = updated_history
         session['chat_history_by_client'] = history_map
 
@@ -141,6 +147,9 @@ def voice_chat():
             'summary_enabled': summarize,
             'client_id': client_id,
         }
+
+        if media:
+            response_payload['media'] = media
 
         if summarize:
             response_payload['summary'] = chat_service.summarize_message(transcript, ui_lang)
@@ -193,11 +202,13 @@ def knowledge_entries_add():
         question_ar = (data.get('question_AR') or '').strip()
         answer_en = (data.get('answer_EN') or '').strip()
         answer_ar = (data.get('answer_AR') or '').strip()
+        image_url = (data.get('image_url') or '').strip() or None
+        video_url = (data.get('video_url') or '').strip() or None
 
         if not question_en or not question_ar or not answer_en or not answer_ar:
             return jsonify({'error': 'Missing required fields (question_EN, question_AR, answer_EN, answer_AR)'}), 400
 
-        success = database_service.add_entry(question_en, question_ar, answer_en, answer_ar, client_id)
+        success = database_service.add_entry(question_en, question_ar, answer_en, answer_ar, client_id, image_url, video_url)
         if not success:
             return jsonify({'error': 'Failed to add entry'}), 500
 
@@ -215,11 +226,13 @@ def knowledge_entries_update(qa_id):
         question_ar = (data.get('question_AR') or '').strip()
         answer_en = (data.get('answer_EN') or '').strip()
         answer_ar = (data.get('answer_AR') or '').strip()
+        image_url = (data.get('image_url') or '').strip() or None
+        video_url = (data.get('video_url') or '').strip() or None
 
         if not question_en or not question_ar or not answer_en or not answer_ar:
             return jsonify({'error': 'Missing required fields (question_EN, question_AR, answer_EN, answer_AR)'}), 400
 
-        success = database_service.update_entry(qa_id, question_en, question_ar, answer_en, answer_ar, client_id)
+        success = database_service.update_entry(qa_id, question_en, question_ar, answer_en, answer_ar, client_id, image_url, video_url)
         if not success:
             return jsonify({'error': 'Failed to update entry'}), 500
 
@@ -253,6 +266,45 @@ def knowledge_entries_clear():
         return jsonify({'success': True, 'client_id': client_id})
     except Exception as e:
         return jsonify({'error': f'Internal server error: {str(e)}'}), 500
+
+
+ALLOWED_MEDIA_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.mp4', '.webm', '.mov', '.avi'}
+UPLOAD_BASE = Path(__file__).resolve().parent.parent / 'uploads' / 'kb'
+
+@api_bp.route('/knowledge/media/upload', methods=['POST'])
+def knowledge_media_upload():
+    try:
+        media_file = request.files.get('file')
+        if not media_file or not media_file.filename:
+            return jsonify({'error': 'No file provided'}), 400
+
+        client_id = _get_client_id(form=request.form, args=request.args)
+        safe_client = re.sub(r'[^a-z0-9_]', '_', client_id.lower())
+
+        filename = media_file.filename
+        ext = Path(filename).suffix.lower()
+        if ext not in ALLOWED_MEDIA_EXTENSIONS:
+            return jsonify({'error': f'File type {ext} not allowed'}), 400
+
+        # Sanitize filename
+        safe_name = re.sub(r'[^\w.\-]', '_', Path(filename).stem) + ext
+        dest_dir = UPLOAD_BASE / safe_client
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        dest_path = dest_dir / safe_name
+        # Avoid overwrites by appending counter
+        counter = 1
+        while dest_path.exists():
+            dest_path = dest_dir / f"{Path(safe_name).stem}_{counter}{ext}"
+            counter += 1
+
+        media_file.save(str(dest_path))
+
+        # Return relative URL path
+        rel_url = f'/uploads/kb/{safe_client}/{dest_path.name}'
+        return jsonify({'success': True, 'url': rel_url, 'filename': dest_path.name})
+    except Exception as e:
+        return jsonify({'error': f'Upload failed: {str(e)}'}), 500
 
 
 @api_bp.route('/voice/tts', methods=['POST'])

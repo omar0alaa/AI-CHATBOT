@@ -106,6 +106,8 @@
                                 <th style="min-width:150px;">Question (AR)</th>
                                 <th style="min-width:180px;">Answer (EN)</th>
                                 <th style="min-width:180px;">Answer (AR)</th>
+                                <th style="width:100px;">Image</th>
+                                <th style="width:100px;">Video</th>
                                 <th style="width:120px;">Actions</th>
                             </tr>
                         </thead>
@@ -130,6 +132,28 @@
                         <input type="text" name="question_AR" id="edit-question-ar" class="form-control" placeholder="Question (Arabic)" required dir="rtl">
                         <textarea name="answer_EN" id="edit-answer-en" class="form-control" placeholder="Answer (English)" required style="min-height:60px;"></textarea>
                         <textarea name="answer_AR" id="edit-answer-ar" class="form-control" placeholder="Answer (Arabic)" required style="min-height:60px;" dir="rtl"></textarea>
+                        <div class="d-flex gap-2 align-items-end">
+                            <div class="flex-grow-1">
+                                <label class="form-label small mb-1">Image URL</label>
+                                <input type="text" id="edit-image-url" class="form-control form-control-sm" placeholder="/uploads/kb/...">
+                            </div>
+                            <div>
+                                <input type="file" id="edit-image-file" class="d-none" accept="image/*">
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="document.getElementById('edit-image-file').click()"><i class="fas fa-upload"></i></button>
+                            </div>
+                        </div>
+                        <div id="edit-image-preview"></div>
+                        <div class="d-flex gap-2 align-items-end">
+                            <div class="flex-grow-1">
+                                <label class="form-label small mb-1">Video URL</label>
+                                <input type="text" id="edit-video-url" class="form-control form-control-sm" placeholder="/uploads/kb/...">
+                            </div>
+                            <div>
+                                <input type="file" id="edit-video-file" class="d-none" accept="video/*">
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="document.getElementById('edit-video-file').click()"><i class="fas fa-upload"></i></button>
+                            </div>
+                        </div>
+                        <div id="edit-video-preview"></div>
                     </div>
                     <div class="modal-footer">
                         <button type="submit" class="btn btn-primary">Save Changes</button>
@@ -170,6 +194,28 @@
                         <input type="text" name="question_AR" class="form-control" placeholder="Question (Arabic)" required dir="rtl">
                         <textarea name="answer_EN" class="form-control" placeholder="Answer (English)" required style="min-height:60px;"></textarea>
                         <textarea name="answer_AR" class="form-control" placeholder="Answer (Arabic)" required style="min-height:60px;" dir="rtl"></textarea>
+                        <div class="d-flex gap-2 align-items-end">
+                            <div class="flex-grow-1">
+                                <label class="form-label small mb-1">Image URL</label>
+                                <input type="text" name="image_url" id="add-image-url" class="form-control form-control-sm" placeholder="/uploads/kb/...">
+                            </div>
+                            <div>
+                                <input type="file" id="add-image-file" class="d-none" accept="image/*">
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="document.getElementById('add-image-file').click()"><i class="fas fa-upload"></i></button>
+                            </div>
+                        </div>
+                        <div id="add-image-preview"></div>
+                        <div class="d-flex gap-2 align-items-end">
+                            <div class="flex-grow-1">
+                                <label class="form-label small mb-1">Video URL</label>
+                                <input type="text" name="video_url" id="add-video-url" class="form-control form-control-sm" placeholder="/uploads/kb/...">
+                            </div>
+                            <div>
+                                <input type="file" id="add-video-file" class="d-none" accept="video/*">
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="document.getElementById('add-video-file').click()"><i class="fas fa-upload"></i></button>
+                            </div>
+                        </div>
+                        <div id="add-video-preview"></div>
                     </div>
                     <div class="modal-footer">
                         <button type="submit" class="btn btn-primary">Add Q&A</button>
@@ -306,13 +352,21 @@
                 tbody.innerHTML = '';
                 const entries = data.entries || [];
                 entries.forEach(row => {
+                    const imgCell = row.image_url
+                        ? `<a href="${row.image_url}" target="_blank"><img src="${row.image_url}" style="max-width:60px;max-height:60px;border-radius:4px;" alt="img"></a>`
+                        : '<span class="text-muted small">-</span>';
+                    const vidCell = row.video_url
+                        ? `<a href="${row.video_url}" target="_blank" class="btn btn-outline-primary btn-sm py-0 px-1"><i class="fas fa-play"></i></a>`
+                        : '<span class="text-muted small">-</span>';
                     tbody.innerHTML += `
-                    <tr data-id="${row.ID}">
+                    <tr data-id="${row.ID}" data-image-url="${row.image_url || ''}" data-video-url="${row.video_url || ''}">
                         <td>${row.ID}</td>
                         <td><span class="question-en">${row.question_EN}</span></td>
                         <td><span class="question-ar" dir="rtl">${row.question_AR}</span></td>
                         <td><span class="answer-en">${row.answer_EN}</span></td>
                         <td><span class="answer-ar" dir="rtl">${row.answer_AR}</span></td>
+                        <td>${imgCell}</td>
+                        <td>${vidCell}</td>
                         <td class="actions">
                             <button class="edit btn btn-warning btn-sm me-1">Edit</button>
                             <button class="delete btn btn-danger btn-sm">Delete</button>
@@ -321,7 +375,7 @@
                 });
 
                 if (!entries.length) {
-                    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No entries for this client yet.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No entries for this client yet.</td></tr>';
                 }
 
                 renderClientSummary(entries.length);
@@ -461,6 +515,42 @@
         setTimeout(pollStatus, 800);
     });
 
+    // Media upload helper
+    async function uploadMediaFile(fileInput, urlInput, previewId) {
+        const file = fileInput.files?.[0];
+        if (!file) return;
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('client_id', getSelectedClientId());
+        const res = await fetch('/api/knowledge/media/upload', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.url) {
+            urlInput.value = data.url;
+            const preview = document.getElementById(previewId);
+            if (file.type.startsWith('image/')) {
+                preview.innerHTML = `<img src="${data.url}" style="max-width:120px;max-height:80px;border-radius:4px;" alt="preview">`;
+            } else {
+                preview.innerHTML = `<span class="badge bg-success">${data.filename}</span>`;
+            }
+        } else {
+            alert(data.error || 'Upload failed');
+        }
+    }
+
+    // Wire up file upload inputs
+    document.getElementById('add-image-file').addEventListener('change', function() {
+        uploadMediaFile(this, document.getElementById('add-image-url'), 'add-image-preview');
+    });
+    document.getElementById('add-video-file').addEventListener('change', function() {
+        uploadMediaFile(this, document.getElementById('add-video-url'), 'add-video-preview');
+    });
+    document.getElementById('edit-image-file').addEventListener('change', function() {
+        uploadMediaFile(this, document.getElementById('edit-image-url'), 'edit-image-preview');
+    });
+    document.getElementById('edit-video-file').addEventListener('change', function() {
+        uploadMediaFile(this, document.getElementById('edit-video-url'), 'edit-video-preview');
+    });
+
     loadClients(getClientFromUrl()).then(fetchQA);
     // Modal form submit
     document.getElementById('add-form-modal').onsubmit = function(e) {
@@ -474,10 +564,14 @@
                 question_EN: form.question_EN.value,
                 question_AR: form.question_AR.value,
                 answer_EN: form.answer_EN.value,
-                answer_AR: form.answer_AR.value
+                answer_AR: form.answer_AR.value,
+                image_url: document.getElementById('add-image-url').value || null,
+                video_url: document.getElementById('add-video-url').value || null
             })
         }).then(() => {
             form.reset();
+            document.getElementById('add-image-preview').innerHTML = '';
+            document.getElementById('add-video-preview').innerHTML = '';
             fetchQA();
             var modal = bootstrap.Modal.getInstance(document.getElementById('addModal'));
             modal.hide();
@@ -499,10 +593,17 @@
             const q_ar = tr.querySelector('.question-ar').textContent;
             const a_en = tr.querySelector('.answer-en').textContent;
             const a_ar = tr.querySelector('.answer-ar').textContent;
+            const img_url = tr.dataset.imageUrl || '';
+            const vid_url = tr.dataset.videoUrl || '';
             document.getElementById('edit-question-en').value = q_en;
             document.getElementById('edit-question-ar').value = q_ar;
             document.getElementById('edit-answer-en').value = a_en;
             document.getElementById('edit-answer-ar').value = a_ar;
+            document.getElementById('edit-image-url').value = img_url;
+            document.getElementById('edit-video-url').value = vid_url;
+            const imgPreview = document.getElementById('edit-image-preview');
+            imgPreview.innerHTML = img_url ? `<img src="${img_url}" style="max-width:120px;max-height:80px;border-radius:4px;" alt="preview">` : '';
+            document.getElementById('edit-video-preview').innerHTML = vid_url ? `<span class="badge bg-success">Video attached</span>` : '';
             var editModal = new bootstrap.Modal(document.getElementById('editModal'));
             editModal.show();
         }
@@ -519,7 +620,9 @@
                 question_EN: document.getElementById('edit-question-en').value,
                 question_AR: document.getElementById('edit-question-ar').value,
                 answer_EN: document.getElementById('edit-answer-en').value,
-                answer_AR: document.getElementById('edit-answer-ar').value
+                answer_AR: document.getElementById('edit-answer-ar').value,
+                image_url: document.getElementById('edit-image-url').value || null,
+                video_url: document.getElementById('edit-video-url').value || null
             })
         }).then(() => {
             fetchQA();
