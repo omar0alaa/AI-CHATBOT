@@ -57,4 +57,7 @@ create_bilingual_db.py
 YouLearnt_Final.docx
 
 #ًWidget
-*widget/
+*widget/;
+
+#DB
+youlearnt_bank.db
