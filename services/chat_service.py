@@ -5,7 +5,7 @@ import json
 import requests
 from langdetect import detect
 from .persona_service import get_persona_prompt, get_persona_fallback_prompt
-from .content_service import contains_forbidden_phrase, get_fallback_message, contains_inappropriate_content, get_inappropriate_response
+from .content_service import contains_forbidden_phrase, get_fallback_message, contains_inappropriate_content, get_inappropriate_response, is_greeting_message, get_greeting_response
 from .logging_service import log_debug, log_info, log_warning, log_error
 from .database_service import get_answer_from_db
 from .ai_config import ai_config
@@ -41,6 +41,17 @@ class ChatService:
             
             return inappropriate_response, final_history, {}
         
+        # Check for greeting message
+        if is_greeting_message(user_message, user_lang):
+            log_info("Greeting message detected, returning greeting response")
+            greeting_response = get_greeting_response(user_lang)
+            
+            # Update chat history with user message and greeting response
+            updated_history = self._update_chat_history(chat_history, user_message, user_lang, client_name, custom_persona)
+            final_history = self._finalize_chat_history(updated_history, greeting_response)
+            
+            return greeting_response, final_history, {}
+        
         # Update chat history with system prompt
         updated_history = self._update_chat_history(chat_history, user_message, user_lang, client_name, custom_persona)
         
@@ -66,6 +77,8 @@ class ChatService:
                 media['image_url'] = m['image_url']
             if m.get('video_url') and 'video_url' not in media:
                 media['video_url'] = m['video_url']
+            if m.get('product_url') and 'product_url' not in media:
+                media['product_url'] = m['product_url']
         
         log_debug(f"Final answer: {len(processed_answer)} characters, media: {bool(media)}")
         return processed_answer, final_history, media

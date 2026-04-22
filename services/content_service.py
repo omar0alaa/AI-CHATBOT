@@ -101,6 +101,32 @@ INAPPROPRIATE_RESPONSE = {
     'en': "I apologize, but I cannot discuss this topic. Please ask a question related to our services."
 }
 
+# Greeting patterns to detect when user sends a greeting message
+GREETING_PATTERNS = {
+    'ar': [
+        'السلام عليكم', 'السلام عليكم ورحمة الله', 'السلام عليكم ورحمة الله وبركاته',
+        'مرحبا', 'أهلا', 'هلا','أهلا وسهلا',
+        'صباح الخير', 'مساء الخير', 'صباحك الخير', 'مساؤك الخير',
+        'كيف حالك', 'كيفك', 'كيف أنت', 'كيفك أنت',
+        'تصبح على خير', 'تصبحين على خير', 'أصبح',
+        'السلام', 'و عليكم السلام', 'وعليكم السلام'
+    ],
+    'en': [
+        'hello', 'hi', 'hey', 'greetings',
+        'good morning', 'good afternoon', 'good evening',
+        'how are you', 'how are you doing', 'how are you today',
+        'how do you do', 'how\'s it going',
+        'what\'s up', 'sup',
+        'good day', 'good night'
+    ]
+}
+
+# Pre-specified greeting responses
+GREETING_RESPONSES = {
+    'ar': "أهلا وسهلا! كيف يمكنني مساعدتك اليوم؟",
+    'en': "Hello! How can I help you today?"
+}
+
 
 class ContentService:
     #Service class for content filtering and processing
@@ -119,6 +145,21 @@ class ContentService:
     def get_inappropriate_response(self, lang: str) -> str:
         #Get the appropriate response for inappropriate content
         return INAPPROPRIATE_RESPONSE.get(lang, INAPPROPRIATE_RESPONSE['en'])
+    
+    def is_greeting_message(self, message: str, lang: str) -> bool:
+        #Check if the user message is a greeting
+        greeting_patterns = GREETING_PATTERNS.get(lang, [])
+        message_check = message.strip().lower() if lang == 'en' else message.strip().lower()
+        
+        for pattern in greeting_patterns:
+            if pattern.lower() in message_check:
+                log_post_process(f"GREETING DETECTED - Pattern matched: {pattern}")
+                return True
+        return False
+    
+    def get_greeting_response(self, lang: str) -> str:
+        #Get the pre-specified greeting response
+        return GREETING_RESPONSES.get(lang, GREETING_RESPONSES['en'])
     
     def contains_forbidden_phrase(self, answer: str, lang: str) -> bool:
         #Check if answer contains forbidden phrases
@@ -198,3 +239,11 @@ def get_fallback_message(lang: str) -> str:
 def rewrite_to_compliant(answer: str, user_question: str, lang: str, fallback_message: str) -> str:
     #Rewrite answer to be compliant
     return content_service.rewrite_to_compliant(answer, user_question, lang, fallback_message)
+
+def is_greeting_message(message: str, lang: str) -> bool:
+    #Check if the user message is a greeting
+    return content_service.is_greeting_message(message, lang)
+
+def get_greeting_response(lang: str) -> str:
+    #Get the pre-specified greeting response
+    return content_service.get_greeting_response(lang)

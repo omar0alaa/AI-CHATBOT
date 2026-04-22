@@ -204,11 +204,12 @@ def knowledge_entries_add():
         answer_ar = (data.get('answer_AR') or '').strip()
         image_url = (data.get('image_url') or '').strip() or None
         video_url = (data.get('video_url') or '').strip() or None
+        product_url = (data.get('product_url') or '').strip() or None
 
         if not question_en or not question_ar or not answer_en or not answer_ar:
             return jsonify({'error': 'Missing required fields (question_EN, question_AR, answer_EN, answer_AR)'}), 400
 
-        success = database_service.add_entry(question_en, question_ar, answer_en, answer_ar, client_id, image_url, video_url)
+        success = database_service.add_entry(question_en, question_ar, answer_en, answer_ar, client_id, image_url, video_url, product_url)
         if not success:
             return jsonify({'error': 'Failed to add entry'}), 500
 
@@ -228,11 +229,12 @@ def knowledge_entries_update(qa_id):
         answer_ar = (data.get('answer_AR') or '').strip()
         image_url = (data.get('image_url') or '').strip() or None
         video_url = (data.get('video_url') or '').strip() or None
+        product_url = (data.get('product_url') or '').strip() or None
 
         if not question_en or not question_ar or not answer_en or not answer_ar:
             return jsonify({'error': 'Missing required fields (question_EN, question_AR, answer_EN, answer_AR)'}), 400
 
-        success = database_service.update_entry(qa_id, question_en, question_ar, answer_en, answer_ar, client_id, image_url, video_url)
+        success = database_service.update_entry(qa_id, question_en, question_ar, answer_en, answer_ar, client_id, image_url, video_url, product_url)
         if not success:
             return jsonify({'error': 'Failed to update entry'}), 500
 

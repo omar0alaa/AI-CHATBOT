@@ -34,6 +34,8 @@ logs/
 uploaded_docs/
 llamaindex_storage/
 error_log.txt
+uploads/
+app.log
 
 # Virtual Environment
 venv/

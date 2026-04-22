@@ -104,7 +104,10 @@ def admin_add_bank():
         if not question_en or not question_ar or not answer_en or not answer_ar:
             return jsonify({'error': 'Missing required fields (question_EN, question_AR, answer_EN, answer_AR)'}), 400
         
-        success = database_service.add_entry(question_en, question_ar, answer_en, answer_ar, client_id)
+        image_url   = (data.get('image_url')   or '').strip() or None
+        video_url   = (data.get('video_url')   or '').strip() or None
+        product_url = (data.get('product_url') or '').strip() or None
+        success = database_service.add_entry(question_en, question_ar, answer_en, answer_ar, client_id, image_url, video_url, product_url)
         if success:
             return jsonify({'success': True, 'client_id': client_id})
         else:
@@ -127,7 +130,10 @@ def admin_edit_bank(qa_id):
         if not question_en or not question_ar or not answer_en or not answer_ar:
             return jsonify({'error': 'Missing required fields (question_EN, question_AR, answer_EN, answer_AR)'}), 400
         
-        success = database_service.update_entry(qa_id, question_en, question_ar, answer_en, answer_ar, client_id)
+        image_url   = (data.get('image_url')   or '').strip() or None
+        video_url   = (data.get('video_url')   or '').strip() or None
+        product_url = (data.get('product_url') or '').strip() or None
+        success = database_service.update_entry(qa_id, question_en, question_ar, answer_en, answer_ar, client_id, image_url, video_url, product_url)
         if success:
             return jsonify({'success': True, 'client_id': client_id, 'id': qa_id})
         else:
